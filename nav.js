@@ -61,7 +61,7 @@
     nav += `</div>`;
   }
   nav += `<div class="nav-foot">
-      <div style="margin-bottom:9px"><a class="link" href="print.html">⎙ Print-friendly — all chapters, one page</a></div>
+      <div style="margin-bottom:9px"><a class="link" href="print.html"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" style="vertical-align:-1.5px;margin-right:5px"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Print-friendly</a></div>
       Built from the <code>sp-1</code> reference skill, synthesis date <strong>2026&#8209;05&#8209;18</strong>.
       Every claim is cited. The Discord moves fast — verify "current state" questions live.
     </div>`;
