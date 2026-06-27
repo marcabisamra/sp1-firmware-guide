@@ -47,6 +47,7 @@
         <div class="t1">SP&#8209;1 FIRMWARE</div>
         <div class="t2">dev field guide</div>
       </div>
+      <button id="theme-toggle" type="button" aria-label="Toggle light/dark theme"></button>
     </div>`;
 
   for (const g of PAGES) {
@@ -73,6 +74,29 @@
       if (!navEl.contains(e.target) && e.target !== btn) navEl.classList.remove("open");
     }
   });
+
+  /* ---------------- Theme toggle (light / dark) ----------------
+     The chosen theme is applied before paint by a tiny inline <head>
+     script on every page; this just wires the button + persistence. */
+  (function () {
+    const root = document.documentElement;
+    const SUN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>';
+    const MOON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>';
+    const cur = () => (root.getAttribute("data-theme") === "light" ? "light" : "dark");
+    const tbtn = document.getElementById("theme-toggle");
+    if (!tbtn) return;
+    const paint = () => {
+      tbtn.innerHTML = cur() === "light" ? MOON : SUN;
+      tbtn.title = cur() === "light" ? "Switch to dark" : "Switch to light";
+    };
+    paint();
+    tbtn.addEventListener("click", () => {
+      const next = cur() === "light" ? "dark" : "light";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("theme", next); } catch (e) {}
+      paint();
+    });
+  })();
 
   // copy buttons on code blocks
   document.querySelectorAll("pre").forEach((pre) => {
@@ -181,6 +205,7 @@
     };
 
     if (RE) {
+      const order = [];   // terms in first-seen order → print footnote numbers
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) => (okNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
       });
@@ -199,10 +224,32 @@
           ab.className = "gl"; ab.tabIndex = 0;
           ab.setAttribute("data-tip", GLOSSARY[hit.key]);
           ab.textContent = mid.nodeValue;
+          order.push({ key: hit.key, term: ab.textContent });
+          ab.setAttribute("data-fn", order.length);
           mid.parentNode.replaceChild(ab, mid);
           node = rest;   // keep scanning the remainder for other terms
         }
       });
+
+      // ---- per-page print glossary: footnotes for the terms used here ----
+      // (skipped on the reference page, which already carries the full A–Z list)
+      if (order.length && !document.getElementById("glossary-all")) {
+        const sec = document.createElement("section");
+        sec.className = "print-gloss";
+        const h = document.createElement("h2");
+        h.textContent = "Glossary — terms on this page";
+        const ol = document.createElement("ol");
+        order.forEach(({ key, term }) => {
+          const li = document.createElement("li");
+          const tt = document.createElement("span");
+          tt.className = "t"; tt.textContent = term + " — ";
+          li.appendChild(tt);
+          li.appendChild(document.createTextNode(GLOSSARY[key]));
+          ol.appendChild(li);
+        });
+        sec.appendChild(h); sec.appendChild(ol);
+        root.appendChild(sec);
+      }
 
       // ---- one shared floating tooltip (fixed-position, never clipped) ----
       const tip = document.createElement("div");
@@ -249,5 +296,18 @@
       window.addEventListener("scroll", () => { if (cur) hide(); }, true);
       window.addEventListener("resize", () => { if (cur) hide(); });
     }
+  }
+
+  // ---- full A–Z glossary on the reference page (same source as the tooltips) ----
+  const gAll = document.getElementById("glossary-all");
+  if (gAll && !gAll.children.length) {
+    const dl = document.createElement("dl");
+    dl.className = "gloss-dl";
+    Object.keys(GLOSSARY).sort().forEach((k) => {
+      const dt = document.createElement("dt"); dt.textContent = k;
+      const dd = document.createElement("dd"); dd.textContent = GLOSSARY[k];
+      dl.appendChild(dt); dl.appendChild(dd);
+    });
+    gAll.appendChild(dl);
   }
 })();
