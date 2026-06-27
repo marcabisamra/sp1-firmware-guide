@@ -141,16 +141,16 @@ main {
 .brand .t1 { font-family: var(--mono); font-size: 14px; letter-spacing: .04em; font-weight: 600; }
 .brand .t2 { font-size: 11px; color: var(--ink-faint); letter-spacing: .14em; text-transform: uppercase; }
 
-/* theme toggle */
-#theme-toggle {
-  margin-left: auto; flex: 0 0 auto;
-  width: 30px; height: 30px; border-radius: 8px;
-  background: transparent; border: 1px solid var(--line-2); color: var(--ink-dim);
-  cursor: pointer; display: grid; place-items: center;
-  transition: color .12s, border-color .12s, background .12s;
+/* brand action icons (print + theme toggle) — borderless, floating, same size */
+.brand-actions { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+.brand-btn {
+  flex: 0 0 auto; width: 26px; height: 26px;
+  background: none; border: none; padding: 0; color: var(--ink-faint);
+  cursor: pointer; display: grid; place-items: center; text-decoration: none;
+  transition: color .12s;
 }
-#theme-toggle:hover { color: var(--orange-2); border-color: var(--orange); }
-#theme-toggle svg { display: block; }
+.brand-btn:hover { color: var(--orange-2); }
+.brand-btn svg { display: block; }
 
 #nav .group { padding: 16px 14px 2px; }
 #nav .group-label {
