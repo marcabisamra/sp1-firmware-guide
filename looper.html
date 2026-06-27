@@ -12,15 +12,13 @@
   <aside id="nav"></aside>
   <main><div class="content">
 
-    <div class="eyebrow">07 · The audio base</div>
+    <div class="eyebrow">13 · Worked example</div>
     <h1>Case study: the tape looper</h1>
-    <p class="lede">This is the SP-1's <strong>second public base</strong> — and the one that already makes sound. Where
-      <a class="link" href="bsp.html">sp1-midi</a> hands you a clean skeleton to add audio to,
-      <code>chattock/sp1-tape-looper</code> is a complete, buildable, <strong>audio-capable</strong> firmware you can fork
-      directly: a four-track tape looper with I²S bring-up, real-time flash streaming, and a custom on-disk layout already
-      working. After the <a class="link" href="build.html">build environment</a> you choose your path — cut your teeth on
-      the minimal MIDI base and grow the audio yourself, or start here with the hard parts done. Either way, this page is
-      the best public reference for those hard parts.</p>
+    <p class="lede">In June 2026 someone shipped exactly the thing the rest of this guide builds toward: a complete,
+      buildable, <strong>audio-capable</strong> custom firmware. <code>chattock/sp1-tape-looper</code> turns the SP-1
+      into a four-track tape looper — and it's the best public reference for the hard parts (I²S bring-up, real-time
+      flash streaming, a custom on-disk layout). This page reads it as a worked example of the path you've just learned —
+      and, since it's MIT-licensed, as a second base you can fork outright.</p>
 
     <div class="box gold">
       <div class="box-h">▲ This changes the landscape</div>
@@ -64,7 +62,7 @@
       <div class="box-h">✓ The lesson: single flash owner + read-ahead rings</div>
       <p>Real-time audio off a slow, occasionally-stalling flash works because exactly one thread does the blocking I/O
       and the audio thread only ever reads RAM. The streamer keeps each track's ring filled ~341&nbsp;ms ahead so the
-      flash's ~150&nbsp;ms random-access stalls never reach the speaker. The <a class="link" href="audio.html">audio page</a> (next) describes this read-ahead idea in the abstract — here it is in working code.</p>
+      flash's ~150&nbsp;ms random-access stalls never reach the speaker. This is the pattern your <a class="link" href="audio.html">audio page</a> hand-waved as "read ahead to hide housekeeping" — here's it done.</p>
     </div>
 
     <h2>The novel move: USB Audio Class 2 input</h2>
@@ -88,7 +86,7 @@ CONFIG_UDC_ENABLE_SOF=y        <span class="c"># SOF drives the feedback regulat
     <ul>
       <li>Each track gets a fixed region, <strong>rounded up to an 8&nbsp;KB (16-block) boundary</strong> so every flush
         burst lands on exactly one internal eMMC page — no slow read-modify-write. (This is the same 8&nbsp;KB-page fact
-        the <a class="link" href="audio.html">audio page</a> covers for TE's own sectors, used for a different end.)</li>
+        your <a class="link" href="audio.html">audio page</a> notes about TE's own sectors, used for a different end.)</li>
       <li>Tracks are independent — <strong>no mixdown is ever stored.</strong> An overdub is one region being written
         while the others are read; mixing happens live and is never written back.</li>
       <li>Each build stamps a distinct on-flash magic (<code>'SE24'</code> / <code>'SE48'</code>) so switching builds
@@ -196,8 +194,8 @@ CONFIG_UDC_ENABLE_SOF=y        <span class="c"># SOF drives the feedback regulat
     </ul>
 
     <div class="pager">
-      <a href="bsp.html"><span class="dir">← Prev</span><span class="ttl">06 · The sp1-midi BSP</span></a>
-      <a class="next" href="audio.html"><span class="dir">Next →</span><span class="ttl">08 · Audio engine &amp; format</span></a>
+      <a href="lab.html"><span class="dir">← Prev</span><span class="ttl">12 · Your first firmware</span></a>
+      <a class="next" href="state.html"><span class="dir">Next →</span><span class="ttl">14 · Who built what</span></a>
     </div>
 
   </div></main>

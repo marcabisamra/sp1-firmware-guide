@@ -20,17 +20,17 @@
     { group: "Build firmware", items: [
       { href: "build.html",          num: "05", title: "Zephyr build environment" },
       { href: "bsp.html",            num: "06", title: "The sp1-midi BSP" },
-      { href: "looper.html",         num: "07", title: "The tape looper" },
-      { href: "audio.html",          num: "08", title: "Audio engine & format" },
+      { href: "audio.html",          num: "07", title: "Audio engine & format" },
     ]},
     { group: "Deep dives", items: [
-      { href: "codecs.html",         num: "09", title: "Codecs & I²S: make sound" },
-      { href: "power.html",          num: "10", title: "Power & lifecycle" },
-      { href: "recovery.html",       num: "11", title: "Debug & recovery" },
-      { href: "internals.html",      num: "12", title: "Player internals" },
+      { href: "codecs.html",         num: "08", title: "Codecs & I²S: make sound" },
+      { href: "power.html",          num: "09", title: "Power & lifecycle" },
+      { href: "recovery.html",       num: "10", title: "Debug & recovery" },
+      { href: "internals.html",      num: "11", title: "Player internals" },
     ]},
     { group: "Put it together", items: [
-      { href: "lab.html",            num: "13", title: "Your first firmware" },
+      { href: "lab.html",            num: "12", title: "Your first firmware" },
+      { href: "looper.html",         num: "13", title: "Case study: tape looper" },
     ]},
     { group: "Reference", items: [
       { href: "state.html",          num: "14", title: "Who has built what" },
