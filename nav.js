@@ -42,7 +42,7 @@
   const here = location.pathname.split("/").pop() || "index.html";
 
   let nav = `<div class="brand">
-      <img class="logo" src="logo.svg" alt="SP-1 stem player" width="40" height="40">
+      <img class="logo" src="logo.svg" alt="SP-1 stem player" width="28" height="38">
       <div>
         <div class="t1">SP&#8209;1 FIRMWARE</div>
         <div class="t2">dev field guide</div>

@@ -79,9 +79,8 @@ main {
   box-shadow: 0 0 0 1px #00000060, 0 6px 18px -6px var(--orange);
 }
 .brand .logo {
-  width: 40px; height: 40px; flex: 0 0 40px;
-  border-radius: 9px; background: #f3f1ec; padding: 3px;
-  box-shadow: 0 0 0 1px #00000050, 0 6px 18px -8px #000;
+  height: 38px; width: auto; display: block;
+  background: none; flex: 0 0 auto;
 }
 .brand .t1 { font-family: var(--mono); font-size: 14px; letter-spacing: .04em; font-weight: 600; }
 .brand .t2 { font-size: 11px; color: var(--ink-faint); letter-spacing: .14em; text-transform: uppercase; }
