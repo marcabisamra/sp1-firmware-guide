@@ -25,12 +25,24 @@
     const root = document.getElementById("print-root");
     const status = document.getElementById("print-status");
     const btn = document.getElementById("do-print");
+
+    // This page assembles the others with fetch(), which a browser blocks for a
+    // file:// page. It must be viewed over http(s) — the published site or a
+    // local server (e.g. `python3 -m http.server` in this folder).
+    if (location.protocol === "file:") {
+      status.innerHTML = "⚠ Open this over <strong>http</strong>, not as a local file — a file:// page can't load the other chapters. Use the published site (…github.io/sp1-firmware-guide/print.html) or run a local server in this folder.";
+      return;
+    }
+
+    // Nav order, with a hardcoded fallback so this works even if nav.js changes.
+    const FALLBACK = ["index.html","device.html","history.html","bootloader.html","protocol.html","build.html","bsp.html","looper.html","audio.html","codecs.html","power.html","recovery.html","internals.html","lab.html","state.html","accuracy.html","reference.html","glossary.html"];
     const here = location.pathname.split("/").pop();
-    const pages = (window.SP1_PAGES || []).filter((h) => h !== here && h !== "print.html");
+    const pages = ((window.SP1_PAGES && window.SP1_PAGES.length) ? window.SP1_PAGES : FALLBACK)
+      .filter((h) => h && h !== here && h !== "print.html");
 
     const fill = (frag) => {
-      // The glossary chapter ships an empty <div id="glossary-all"> that is
-      // normally populated by nav.js at runtime — populate it here too.
+      // The glossary chapter ships an empty <div id="glossary-all"> populated by
+      // nav.js at runtime — populate it here too (skip gracefully if unavailable).
       const slot = frag.querySelector("#glossary-all");
       if (slot && window.SP1_buildGlossaryDl) {
         slot.id = "";                 // avoid a duplicate id in the combined page
@@ -39,14 +51,14 @@
     };
 
     (async () => {
-      let n = 0;
+      let n = 0, fail = 0;
       for (const href of pages) {
         try {
           const res = await fetch(href);
-          if (!res.ok) continue;
+          if (!res.ok) { fail++; continue; }
           const doc = new DOMParser().parseFromString(await res.text(), "text/html");
           const content = doc.querySelector("main .content");
-          if (!content) continue;
+          if (!content) { fail++; continue; }
           content.querySelectorAll(".pager, .print-bar").forEach((el) => el.remove());
           const sec = document.createElement("section");
           sec.className = "print-chapter";
@@ -55,9 +67,13 @@
           root.appendChild(sec);
           n++;
           if (status) status.textContent = "Loaded " + n + " / " + pages.length + " chapters…";
-        } catch (e) { /* skip a failed page rather than abort the whole doc */ }
+        } catch (e) { fail++; }
       }
-      if (status) status.textContent = n + " chapters ready — use your browser's Print (⌘/Ctrl-P).";
+      if (!n) {
+        status.innerHTML = "⚠ Could not load any chapters (" + fail + " failed). View this over http(s), not as a local file.";
+        return;
+      }
+      status.textContent = n + " chapters ready" + (fail ? " (" + fail + " failed)" : "") + " — use your browser's Print (⌘/Ctrl-P).";
       if (btn) { btn.disabled = false; btn.addEventListener("click", () => window.print()); }
     })();
   })();
