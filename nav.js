@@ -61,6 +61,7 @@
     nav += `</div>`;
   }
   nav += `<div class="nav-foot">
+      <div style="margin-bottom:9px"><a class="link" href="print.html">⎙ Print-friendly — all chapters, one page</a></div>
       Built from the <code>sp-1</code> reference skill, synthesis date <strong>2026&#8209;05&#8209;18</strong>.
       Every claim is cited. The Discord moves fast — verify "current state" questions live.
     </div>`;
@@ -277,9 +278,8 @@
     }
   }
 
-  // ---- full A–Z glossary on the reference page (same source as the tooltips) ----
-  const gAll = document.getElementById("glossary-all");
-  if (gAll && !gAll.children.length) {
+  // ---- full A–Z glossary (same source as the tooltips) ----
+  function buildGlossaryDl() {
     const dl = document.createElement("dl");
     dl.className = "gloss-dl";
     Object.keys(GLOSSARY).sort().forEach((k) => {
@@ -287,6 +287,13 @@
       const dd = document.createElement("dd"); dd.textContent = GLOSSARY[k];
       dl.appendChild(dt); dl.appendChild(dd);
     });
-    gAll.appendChild(dl);
+    return dl;
   }
+  const gAll = document.getElementById("glossary-all");
+  if (gAll && !gAll.children.length) gAll.appendChild(buildGlossaryDl());
+
+  // Exposed for the single-page print view (print.html): the ordered chapter
+  // list and the glossary builder, so it can stack every chapter + the glossary.
+  window.SP1_PAGES = PAGES.reduce((a, g) => a.concat(g.items.map((it) => it.href)), []);
+  window.SP1_buildGlossaryDl = buildGlossaryDl;
 })();

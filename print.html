@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print the whole guide · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+  <script>(function(){try{var t=localStorage.getItem("theme");if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body class="print-all">
+  <main><div class="content">
+    <div class="print-bar no-print">
+      <div>
+        <strong>The complete guide on one page.</strong>
+        <span id="print-status">Loading all chapters…</span>
+      </div>
+      <button id="do-print" type="button" disabled>⎙ Print</button>
+    </div>
+    <div id="print-root"></div>
+  </div></main>
+
+  <script src="nav.js"></script>
+  <script>
+  (function () {
+    const root = document.getElementById("print-root");
+    const status = document.getElementById("print-status");
+    const btn = document.getElementById("do-print");
+    const here = location.pathname.split("/").pop();
+    const pages = (window.SP1_PAGES || []).filter((h) => h !== here && h !== "print.html");
+
+    const fill = (frag) => {
+      // The glossary chapter ships an empty <div id="glossary-all"> that is
+      // normally populated by nav.js at runtime — populate it here too.
+      const slot = frag.querySelector("#glossary-all");
+      if (slot && window.SP1_buildGlossaryDl) {
+        slot.id = "";                 // avoid a duplicate id in the combined page
+        slot.appendChild(window.SP1_buildGlossaryDl());
+      }
+    };
+
+    (async () => {
+      let n = 0;
+      for (const href of pages) {
+        try {
+          const res = await fetch(href);
+          if (!res.ok) continue;
+          const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+          const content = doc.querySelector("main .content");
+          if (!content) continue;
+          content.querySelectorAll(".pager, .print-bar").forEach((el) => el.remove());
+          const sec = document.createElement("section");
+          sec.className = "print-chapter";
+          while (content.firstChild) sec.appendChild(content.firstChild);
+          fill(sec);
+          root.appendChild(sec);
+          n++;
+          if (status) status.textContent = "Loaded " + n + " / " + pages.length + " chapters…";
+        } catch (e) { /* skip a failed page rather than abort the whole doc */ }
+      }
+      if (status) status.textContent = n + " chapters ready — use your browser's Print (⌘/Ctrl-P).";
+      if (btn) { btn.disabled = false; btn.addEventListener("click", () => window.print()); }
+    })();
+  })();
+  </script>
+</body>
+</html>
