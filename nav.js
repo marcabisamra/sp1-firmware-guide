@@ -36,13 +36,15 @@
       { href: "state.html",          num: "14", title: "Who has built what" },
       { href: "accuracy.html",       num: "15", title: "Don't hallucinate" },
       { href: "reference.html",      num: "16", title: "Sources & cheat-sheet" },
+      { href: "glossary.html",       num: "17", title: "Glossary" },
     ]},
   ];
 
   const here = location.pathname.split("/").pop() || "index.html";
 
   let nav = `<div class="brand">
-      <img class="logo" src="logo.svg" alt="SP-1 stem player" width="28" height="38">
+      <img class="logo logo-dark" src="logo.svg" alt="SP-1 stem player" width="28" height="38">
+      <img class="logo logo-light" src="logo-light.svg" alt="SP-1 stem player" width="30" height="38">
       <div>
         <div class="t1">SP&#8209;1 FIRMWARE</div>
         <div class="t2">dev field guide</div>
@@ -205,7 +207,6 @@
     };
 
     if (RE) {
-      const order = [];   // terms in first-seen order → print footnote numbers
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) => (okNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
       });
@@ -224,32 +225,10 @@
           ab.className = "gl"; ab.tabIndex = 0;
           ab.setAttribute("data-tip", GLOSSARY[hit.key]);
           ab.textContent = mid.nodeValue;
-          order.push({ key: hit.key, term: ab.textContent });
-          ab.setAttribute("data-fn", order.length);
           mid.parentNode.replaceChild(ab, mid);
           node = rest;   // keep scanning the remainder for other terms
         }
       });
-
-      // ---- per-page print glossary: footnotes for the terms used here ----
-      // (skipped on the reference page, which already carries the full A–Z list)
-      if (order.length && !document.getElementById("glossary-all")) {
-        const sec = document.createElement("section");
-        sec.className = "print-gloss";
-        const h = document.createElement("h2");
-        h.textContent = "Glossary — terms on this page";
-        const ol = document.createElement("ol");
-        order.forEach(({ key, term }) => {
-          const li = document.createElement("li");
-          const tt = document.createElement("span");
-          tt.className = "t"; tt.textContent = term + " — ";
-          li.appendChild(tt);
-          li.appendChild(document.createTextNode(GLOSSARY[key]));
-          ol.appendChild(li);
-        });
-        sec.appendChild(h); sec.appendChild(ol);
-        root.appendChild(sec);
-      }
 
       // ---- one shared floating tooltip (fixed-position, never clipped) ----
       const tip = document.createElement("div");

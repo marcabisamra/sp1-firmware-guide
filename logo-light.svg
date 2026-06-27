@@ -1,0 +1,63 @@
+<svg viewBox="64 14 392 488" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="bodyShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <!-- side / top tabs (behind body) -->
+  <g fill="#d9d5cf">
+    <!-- two tabs on top edge -->
+    <rect x="120" y="24" width="42" height="22" rx="6"/>
+    <rect x="170" y="24" width="42" height="22" rx="6"/>
+    <!-- one tab on left edge -->
+    <rect x="72" y="92" width="20" height="54" rx="6"/>
+    <!-- two tabs on right edge -->
+    <rect x="424" y="72" width="20" height="58" rx="6"/>
+    <rect x="424" y="382" width="20" height="58" rx="6"/>
+  </g>
+
+  <!-- device body -->
+  <g filter="url(#bodyShadow)">
+    <rect x="90" y="40" width="335" height="450" rx="22" fill="#efece7"/>
+    <!-- right side panel (slightly cooler/darker shade) -->
+    <path d="M350 40 H403 a22 22 0 0 1 22 22 V468 a22 22 0 0 1 -22 22 H350 Z" fill="#e1ddd6"/>
+  </g>
+
+  <!-- red play triangle (top right) -->
+  <path d="M383 100 l13 24 h-26 Z" fill="#e0503a"/>
+
+  <!-- four vertical sliders -->
+  <g>
+    <!-- tracks -->
+    <rect x="123" y="213" width="18" height="99" rx="9" fill="#d6d1c9"/>
+    <rect x="188" y="213" width="18" height="99" rx="9" fill="#d6d1c9"/>
+    <rect x="253" y="213" width="18" height="99" rx="9" fill="#d6d1c9"/>
+    <rect x="318" y="213" width="18" height="99" rx="9" fill="#d6d1c9"/>
+    <!-- knobs (centered handle) -->
+    <circle cx="132" cy="258" r="11" fill="#fbfaf8"/>
+    <circle cx="197" cy="258" r="11" fill="#fbfaf8"/>
+    <circle cx="262" cy="258" r="11" fill="#fbfaf8"/>
+    <circle cx="327" cy="258" r="11" fill="#fbfaf8"/>
+  </g>
+
+  <!-- four indicator dots -->
+  <g fill="#b6c0c7">
+    <circle cx="132" cy="345" r="4"/>
+    <circle cx="197" cy="345" r="4"/>
+    <circle cx="262" cy="345" r="4"/>
+    <circle cx="327" cy="345" r="4"/>
+  </g>
+
+  <!-- four rounded rectangular buttons -->
+  <g fill="#d4cfc7">
+    <rect x="116" y="383" width="32" height="52" rx="7"/>
+    <rect x="181" y="383" width="32" height="52" rx="7"/>
+    <rect x="246" y="383" width="32" height="52" rx="7"/>
+    <rect x="311" y="383" width="32" height="52" rx="7"/>
+  </g>
+
+  <!-- two dots (bottom right) -->
+  <circle cx="383" cy="388" r="4" fill="#c4bfb6"/>
+  <circle cx="383" cy="402" r="4" fill="#cabda4"/>
+</svg>
