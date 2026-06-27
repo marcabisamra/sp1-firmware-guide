@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codecs & I²S: make sound · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">08 · Make sound</div>
+    <h1>Codecs &amp; I²S: making sound come out</h1>
+    <p class="lede">The audio page told you what the bytes mean. This one is the step that actually defeats people:
+      bringing up the two codecs and the I²S bus in the right order so a sample written to <code>SDOUT</code> turns into
+      a sound. The trap is the <strong>clock topology</strong> — get it wrong and you get silence, not an error.</p>
+
+    <div class="box gold">
+      <div class="box-h">▲ The one thing to internalise</div>
+      <p>On the SP-1 the <strong>nRF52840 is the I²S <em>slave</em></strong>, not the master. An external
+      <strong>3.072&nbsp;MHz oscillator</strong> is the master clock, and the <strong>CS42L42 generates LRCLK</strong>
+      after you configure it over I²C. So you can't just "turn on I²S and push samples" — the codec has to be alive and
+      its PLL locked <em>first</em>, or there's no frame clock and nothing plays. <span class="src">TKT wiki: I2S, 2026-05-12</span></p>
+    </div>
+
+    <h2>The clock chain</h2>
+    <figure class="fig">
+      <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SP-1 audio clock topology">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--orange)"/>
+          </marker>
+        </defs>
+        <!-- oscillator -->
+        <rect class="sv-accent" x="20" y="120" width="150" height="60" rx="8"/>
+        <text class="sv-t" x="95" y="146" text-anchor="middle">3.072 MHz osc</text>
+        <text class="sv-lbl" x="95" y="164" text-anchor="middle">enable P0.13 high</text>
+        <!-- CS42L42 -->
+        <rect class="sv-chip" x="300" y="40" width="180" height="80" rx="8"/>
+        <text class="sv-t sv-accent-t" x="390" y="66" text-anchor="middle">CS42L42  (0x48)</text>
+        <text class="sv-lbl" x="390" y="84" text-anchor="middle">headphone codec</text>
+        <text class="sv-lbl" x="390" y="100" text-anchor="middle">PLL → generates LRCLK</text>
+        <!-- nRF -->
+        <rect class="sv-box" x="300" y="135" width="180" height="64" rx="8"/>
+        <text class="sv-t" x="390" y="161" text-anchor="middle">nRF52840 I²S</text>
+        <text class="sv-lbl" x="390" y="179" text-anchor="middle">SLAVE · MCK off</text>
+        <!-- TAS2505 -->
+        <rect class="sv-box" x="300" y="214" width="180" height="64" rx="8"/>
+        <text class="sv-t" x="390" y="240" text-anchor="middle">TAS2505  (0x18)</text>
+        <text class="sv-lbl" x="390" y="258" text-anchor="middle">speaker amp · slave</text>
+        <!-- outputs -->
+        <rect class="sv-box" x="600" y="40" width="140" height="64" rx="8"/>
+        <text class="sv-t" x="670" y="70" text-anchor="middle">TRRS jack</text>
+        <text class="sv-lbl" x="670" y="88" text-anchor="middle">headphones</text>
+        <rect class="sv-box" x="600" y="214" width="140" height="64" rx="8"/>
+        <text class="sv-t" x="670" y="244" text-anchor="middle">speaker</text>
+        <text class="sv-lbl" x="670" y="262" text-anchor="middle">mono</text>
+        <!-- clock flows -->
+        <path class="sv-flow" d="M170,150 L300,90"/>
+        <path class="sv-flow" d="M170,150 L300,167"/>
+        <path class="sv-flow" d="M170,150 L300,246"/>
+        <text class="sv-lbl" x="232" y="108">BCLK</text>
+        <!-- LRCLK from CS42L42 to nRF + TAS -->
+        <path class="sv-flow" d="M390,120 L390,135"/>
+        <text class="sv-lbl" x="398" y="132">LRCLK</text>
+        <!-- audio out -->
+        <path class="sv-flow" d="M480,80 L600,72"/>
+        <path class="sv-flow" d="M480,246 L600,246"/>
+      </svg>
+      <figcaption>The osc clocks BCLK; the CS42L42 derives LRCLK; the nRF and TAS2505 follow as slaves. Bring the CS42L42 up first.</figcaption>
+    </figure>
+
+    <h2>The two buses</h2>
+    <div class="kv">
+      <dt>I²C0 (control)</dt><dd>SDA <code>P1.07</code>, SCL <code>P1.11</code>, up to 400&nbsp;kHz, 4.7&nbsp;kΩ pull-ups on both lines</dd>
+      <dt>I²S0 (audio)</dt><dd>BCLK <code>P0.12</code>, LRCK <code>P0.11</code>, SDOUT <code>P1.09</code> — both codecs listen to the same stream</dd>
+      <dt>Sample format</dt><dd>48&nbsp;kHz, 24-bit left-aligned in 32-bit slots, BCLK/LRCLK = 64×, buffer 256 samples (128 frames)</dd>
+      <dt>Reset lines</dt><dd>CS42L42 <code>P0.15</code>, TAS2505 <code>P0.09</code> (NFC1 — needs <code>nfct-pins-as-gpios;</code>). Both active-low.</dd>
+    </div>
+    <p>Both codecs share one I²S stream and each picks the channels it wants via its own register config — the CS42L42
+      takes a stereo pair for headphones, the TAS2505 takes a mono sum for the speaker. <code>SDIN</code> is unused; the
+      headset mic comes back over I²C status registers, not the I²S wire.</p>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">references/06-audio-codecs.md</span>, driver code at <span class="src">assets/sp1-midi-2026-05-13/drivers/audio/{cs42l42_codec.c, tas2505_codec.c}</span>.</p></div>
+
+    <h2>CS42L42 bring-up (headphones)</h2>
+    <p>16-bit register addresses (address byte → reg MSB → reg LSB → data). The order matters:</p>
+    <div class="steps">
+      <div class="step"><h3>Clock, then release reset</h3><p>Oscillator running (P0.13 high), BCLK driven, <em>then</em> release reset (P0.15 high). <strong>Wait ≥ 2.5&nbsp;ms</strong> for the internal clock to start before any I²C command.</p></div>
+      <div class="step"><h3>Confirm it's alive</h3><p>Read <code>DEVID_AB/CD/E</code> (<code>0x1001–0x1003</code>) — the first sanity check that the chip answers and is the expected part.</p></div>
+      <div class="step"><h3>Configure and lock the PLL</h3><p>Write <code>PLL_CTL3 0x1508</code>, <code>PLL_DIV_FRAC2 0x1504</code>, <code>PLL_DIV_INT 0x1505</code>, <code>PLL_CAL_RATIO 0x150A</code>; enable MCLK + ASRC clocks; then <strong>poll <code>PLL_LOCK_STATUS 0x130E</code> until locked.</strong> No lock → no LRCLK → no audio.</p></div>
+      <div class="step"><h3>Configure the audio port</h3><p>Set the ASP (24-bit, 48&nbsp;kHz — remember nRF is the slave), pick I²S channels with <code>SP_RX_CH_SEL 0x2501</code>, set 24-bit resolution.</p></div>
+      <div class="step"><h3>Power up the output</h3><p><code>PWR_CTL1 0x1101</code>, <code>HP_CTL 0x2001</code>, <code>DAC_CTL 0x240E</code>, then enable jack/mic detect (<code>0x130F</code>, <code>0x1B75</code>).</p></div>
+    </div>
+    <div class="box tip">
+      <div class="box-h">✓ The one-register mute</div>
+      <p>To gate headphone audio without tearing down codec state, write <code>HP_CTL</code> (<code>0x2001</code>):
+      <code>0x0D</code> = mute all outputs, <code>0x01</code> = unmute. Headphone-present check: read
+      <code>TSRS_PLUG_STATUS 0x130F</code> (this is what <code>cs42l42_codec_is_headphone_connected()</code> uses — the
+      tape looper mutes the speaker off this signal).</p>
+    </div>
+
+    <h2>TAS2505 bring-up (speaker)</h2>
+    <p>Different model entirely: a <strong>page + register</strong> chip. To write page&nbsp;P register&nbsp;R, first write
+      <code>0x00 = P</code> (the page-select register, present on every page), then write <code>R = value</code>. Cache the
+      current page to skip redundant selects.</p>
+    <pre><code><span class="c">// volume: page 1, register 46 — 0x00 = max, 0x7F = mute</span>
+tas2505_write_reg(dev, <span class="n">1</span>, <span class="n">46</span>, volume);</code></pre>
+    <ol>
+      <li>Release reset (P0.09 high).</li>
+      <li>Page 0: configure clocking from BCLK/LRCK.</li>
+      <li>Page 1: configure the speaker amp path, set volume.</li>
+      <li>DSP pages: load the default coefficient table (biquad EQ + a likely low-frequency limiter to protect the tiny driver). Entries are <code>{ register, b0, b1, b2 }</code> — a 24-bit coefficient per register.</li>
+      <li>Enable the amp (mute off).</li>
+    </ol>
+    <div class="box note">
+      <div class="box-h">◆ Zephyr does most of this for you</div>
+      <p>With <code>CONFIG_AUDIO=y</code> + <code>CONFIG_AUDIO_CODEC=y</code>, both chips present the unified
+      <code>audio_codec_configure()</code> / <code>_start_output()</code> / <code>_set_property()</code> API and the
+      drivers handle the register-level dance. After init you mostly just set volume and stream I²S. The catch from the
+      <a class="link" href="bsp.html">BSP page</a> stands: <code>sp1-midi</code> <em>configures</em> the codecs but never
+      streams — you supply the I²S TX feed.</p>
+    </div>
+
+    <h2>How the tape looper does it</h2>
+    <p>The <a class="link" href="looper.html">case-study firmware</a> follows exactly this clock topology — its source
+      calls the codec/I²S sequence "Tim's wiki sequence, verbatim — native TE topology," and the author's headline
+      design note is the same one at the top of this page: run the board exactly as TE designed it (osc → CS42L42 frame
+      master → nRF + TAS2505 as slaves) and <em>both</em> outputs stay clean. Deviating from that is what produces the
+      classic "it builds, codecs ACK on I²C, but no sound" dead end.</p>
+
+    <div class="box warn">
+      <div class="box-h">✕ Failure modes to recognise</div>
+      <ul style="margin-bottom:0">
+        <li><strong>Silence, codecs ACK fine:</strong> almost always the clock chain — PLL never locked, or you tried to master I²S from the nRF.</li>
+        <li><strong>I²C NAK right after reset:</strong> you didn't wait the 2.5&nbsp;ms after releasing CS42L42 reset.</li>
+        <li><strong>TAS2505 writes land in the wrong place:</strong> stale page cache — you wrote a register without selecting its page.</li>
+        <li><strong>Speaker plays when headphones are in:</strong> you didn't wire the <code>0x130F</code> jack-sense to a speaker mute.</li>
+      </ul>
+    </div>
+
+    <div class="pager">
+      <a href="audio.html"><span class="dir">← Prev</span><span class="ttl">07 · Audio engine &amp; format</span></a>
+      <a class="next" href="power.html"><span class="dir">Next →</span><span class="ttl">09 · Power &amp; lifecycle</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

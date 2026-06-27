@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it was cracked · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">02 · History</div>
+    <h1>How it was cracked</h1>
+    <p class="lede">Everything you're about to build on exists because a handful of people spent years
+      reverse-engineering a sealed device. You won't repeat most of it — but knowing what each step bought you
+      tells you which sources to trust.</p>
+
+    <h2>The timeline</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>When</th><th>What happened</th></tr></thead>
+      <tbody>
+        <tr><td>2024-04</td><td>First public teardown thread opens on the Lines forum.</td></tr>
+        <tr><td>2024-07</td><td>Glitch-attack campaign begins; <strong>murray</strong> publishes a BeagleBone PRU glitcher.</td></tr>
+        <tr><td>2024-12</td><td><strong>JoseJX</strong> decodes the basic eMMC audio format: 8 channels, 24-bit, 48&nbsp;kHz.</td></tr>
+        <tr><td><strong>2025-01-25</strong></td><td><strong>Firmware extracted.</strong> murray bypasses APPROTECT on attempt <strong>#8,504</strong> via voltage glitch.</td></tr>
+        <tr><td>2025-02–04</td><td>Ghidra disassembly (Duloz et al.); PCB schematic reversed (TimK).</td></tr>
+        <tr><td>2025-04</td><td><strong>B_E_N</strong> discovers the <strong>Track&nbsp;1 + Track&nbsp;4 + USB-C</strong> bootloader trigger. <span class="src">Lines #556</span></td></tr>
+        <tr><td>2025-06</td><td><strong>solderless.engineering</strong> launches — web-based flashing, no soldering.</td></tr>
+        <tr><td>2026-01</td><td>TimK confirms <strong>custom stems play on stock firmware</strong> — no firmware mod needed. <span class="src">Lines #799–805</span></td></tr>
+        <tr><td>2026-05-06</td><td>Lines thread closed (copyright/spam); community moves to Discord.</td></tr>
+        <tr><td>2026-05-08</td><td><strong>zee_33</strong> dumps firmware via LED bit-banging; <strong>emvee1968</strong> demos custom firmware built with Claude Code.</td></tr>
+        <tr><td>2026-05-09</td><td><strong>ericlewis</strong> publishes the <code>sp1-midi</code> Zephyr BSP and shares audio/storage reference code.</td></tr>
+        <tr><td>2026-05-18</td><td>solderless.engineering returns as a multi-app launcher with a public firmware flasher.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>The APPROTECT glitch — what it bought you</h2>
+    <p>The nRF52840 has a hardware <strong>APPROTECT</strong> bit that blocks SWD read access to firmware. Production
+      SP-1 units ship with it enabled. The chip's silicon revision is vulnerable to a known
+      <strong>voltage-glitch</strong> technique (published by <em>limitedresults</em> in 2020): drop the supply rail
+      for a few nanoseconds at exactly the right moment during boot and the protection check "fails open," enabling
+      SWD even though APPROTECT is still set.</p>
+    <p>murray automated this with a <strong>BeagleBone Black</strong>, using its PRU real-time units for 5&nbsp;ns pulse
+      precision, a MOSFET to short the <code>DEC1</code> decoupling cap, and a J-Link retrying after each attempt.
+      Success rate was roughly 1-in-thousands, so <strong>elew</strong> joined with 5 more units to run attempts in
+      parallel. On <strong>2025-01-25, attempt #8,504</strong> connected, and the full ~256&nbsp;KB nRF flash
+      (bootloader + app) was dumped.</p>
+    <div class="box cite"><div class="box-h">✦ Sources</div><p><span class="src">references/14-approtect-glitch-attack.md</span> · murray's rig: <code>github.com/resinbeard/beaglebone-black-glitcher</code> · technique: limitedresults, "nRF52 Debug Resurrection," 2020.</p></div>
+
+    <div class="box note">
+      <div class="box-h">◆ The dump is the foundation — but you don't need to repeat it</div>
+      <p>That single dump fueled the Ghidra disassembly, TimK's clean-room eMMC driver, and ericlewis's
+      <code>audiothingies</code> audio-engine reimplementation. <strong>For your own firmware you do not care about
+      APPROTECT at all</strong> — the Track&nbsp;1+4 bootloader lets you flash the app slot directly, and APPROTECT is
+      irrelevant to that workflow.</p>
+    </div>
+
+    <h2>The cleverest extraction: LED bit-banging</h2>
+    <p>You don't need 8,504 glitch attempts to read a device's firmware. <strong>zee_33</strong> showed that because
+      the Track&nbsp;1+4 bootloader lets you flash <em>any</em> firmware, you can flash a tiny (~4&nbsp;KB) program that
+      reads flash bytes and <strong>encodes them as patterns on the 8 LEDs</strong>, film it with a phone camera, and
+      decode the video with OpenCV.</p>
+    <p>It works because APPROTECT only blocks <em>external</em> SWD reads — <strong>code running on the chip can read all
+      of flash freely</strong>, including the untouched bootloader region. It's slow but needs no exotic hardware and
+      doesn't even require opening the case. The security lesson: <em>"firmware is read-protected" and "the device runs
+      only trusted code" are different claims, and APPROTECT only addresses the first.</em></p>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">references/17-led-bitbang-dump.md</span> — zee_33, Discord #firmware, 2026-05-08.</p></div>
+
+    <h2>Who to trust on what</h2>
+    <p>A small group did most of the deep work. Citing the right person saves time — and these two are
+      <strong>different people</strong>, a distinction the community is firm about.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Person</th><th>Handles</th><th>Authority on</th></tr></thead>
+      <tbody>
+        <tr><td><strong>TimK</strong></td><td>tkt1000 · timknapen</td><td>Firmware/Zephyr, eMMC driver, PCB schematic, bootloader docs. Owns <code>github.com/timknapen/SP-1-dev</code>.</td></tr>
+        <tr><td><strong>ericlewis</strong></td><td>ericlewis</td><td>Audio engine, mixer/effects, tape FX, storage, the <code>sp1-midi</code> BSP. <em>Not the same person as TimK.</em></td></tr>
+        <tr><td>murray</td><td>—</td><td>APPROTECT glitch attack, BeagleBone PRU automation.</td></tr>
+        <tr><td>JoseJX</td><td>—</td><td>Audio format decoding, timing metadata.</td></tr>
+        <tr><td>B_E_N</td><td>—</td><td>The Track&nbsp;1+4 bootloader trigger.</td></tr>
+        <tr><td>Galapagoose</td><td>—</td><td>Hardware timing, MIDI clock encoding.</td></tr>
+        <tr><td>emvee1968 · virtualflannel_46386 · zee_33</td><td>—</td><td>Recent custom-firmware authors (see <a class="link" href="state.html">Who built what</a>).</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ Don't conflate TimK and ericlewis</div>
+      <p>It's the most common SP-1 mistake. TimK ≠ ericlewis. Different repos, different areas. And
+      <code>SP-1-dev</code> is a <em>documentation</em> repo — it does <strong>not</strong> contain Python or Rust tools
+      (an AI claimed it did; TimK corrected it). See <a class="link" href="accuracy.html">Don't hallucinate</a>.</p>
+    </div>
+
+    <div class="pager">
+      <a href="device.html"><span class="dir">← Prev</span><span class="ttl">01 · The device</span></a>
+      <a class="next" href="bootloader.html"><span class="dir">Next →</span><span class="ttl">03 · Bootloader &amp; flashing</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

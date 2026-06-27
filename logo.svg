@@ -1,0 +1,58 @@
+<svg viewBox="0 0 1240 1240" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- soft drop shadow for the body -->
+    <filter id="bodyShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+    <!-- subtle inset gradient for slider tracks -->
+    <linearGradient id="trackGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfc9c1"/>
+      <stop offset="1" stop-color="#e9e5df"/>
+    </linearGradient>
+  </defs>
+
+  <!-- device body -->
+  <g filter="url(#bodyShadow)">
+    <rect x="345" y="255" width="545" height="745" rx="34" fill="#f3f1ec"/>
+    <!-- right side panel (slightly cooler/darker shade) -->
+    <path d="M790 255 H856 a34 34 0 0 1 34 34 V966 a34 34 0 0 1 -34 34 H790 Z" fill="#e7e4dd"/>
+  </g>
+
+  <!-- red play triangle (top right) -->
+  <path d="M838 350 l26 46 h-52 Z" fill="#e0503a"/>
+
+  <!-- four vertical sliders -->
+  <g>
+    <!-- slider tracks -->
+    <rect x="402" y="525" width="22" height="200" rx="11" fill="url(#trackGrad)"/>
+    <rect x="500" y="525" width="22" height="200" rx="11" fill="url(#trackGrad)"/>
+    <rect x="598" y="525" width="22" height="200" rx="11" fill="url(#trackGrad)"/>
+    <rect x="696" y="525" width="22" height="200" rx="11" fill="url(#trackGrad)"/>
+
+    <!-- slider knobs (at top) -->
+    <circle cx="413" cy="533" r="20" fill="#cdc7bf"/>
+    <circle cx="511" cy="533" r="20" fill="#cdc7bf"/>
+    <circle cx="609" cy="533" r="20" fill="#cdc7bf"/>
+    <circle cx="707" cy="533" r="20" fill="#cdc7bf"/>
+  </g>
+
+  <!-- four small indicator dots -->
+  <g fill="#d6dde2">
+    <circle cx="413" cy="780" r="7"/>
+    <circle cx="511" cy="780" r="7"/>
+    <circle cx="609" cy="780" r="7"/>
+    <circle cx="707" cy="780" r="7"/>
+  </g>
+
+  <!-- four rounded rectangular buttons -->
+  <g fill="#d4cfc7">
+    <rect x="397" y="838" width="32" height="58" rx="9"/>
+    <rect x="495" y="838" width="32" height="58" rx="9"/>
+    <rect x="593" y="838" width="32" height="58" rx="9"/>
+    <rect x="691" y="838" width="32" height="58" rx="9"/>
+  </g>
+
+  <!-- two dots (bottom right) -->
+  <circle cx="836" cy="858" r="7" fill="#c9c4bb"/>
+  <circle cx="836" cy="882" r="7" fill="#cdbfa6"/>
+</svg>

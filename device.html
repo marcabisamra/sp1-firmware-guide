@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The device · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">01 · Hardware</div>
+    <h1>The device</h1>
+    <p class="lede">Before you write a line of firmware, learn what's on the board. The whole project lives or dies
+      on knowing which pin does what and where your code is allowed to live in flash.</p>
+
+    <h2>What it is</h2>
+    <p>The <strong>Teenage Engineering SP-1</strong> (model <em>Stem Player SP-01</em>) is a handheld four-stem audio
+      player, designed by TE for distribution alongside Kanye West's <em>Donda</em> and <em>Jesus Is King</em>. It was
+      never sold at retail; units reached the public through gifts, leaks and resale. Internally it plays 4 stereo
+      stems at <strong>24-bit / 48&nbsp;kHz</strong> with DSP effects and tape-style fast-forward/rewind.</p>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">references/01-overview-and-history.md</span> — synthesized from Lines #1–846 and Discord through 2026-05-11.</p></div>
+
+    <h2>Bill of materials — the chips that matter</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Role</th><th>Part</th><th>How firmware talks to it</th></tr></thead>
+      <tbody>
+        <tr><td>SoC</td><td><strong>Nordic nRF52840</strong> (aQFN73)</td><td>Cortex-M4F @ 64&nbsp;MHz · 1&nbsp;MB flash · 256&nbsp;KB RAM. Your code runs here.</td></tr>
+        <tr><td>Headphone codec</td><td><strong>Cirrus CS42L42</strong></td><td>I²C address <code>0x48</code>; stereo DAC/ADC for the TRRS jack.</td></tr>
+        <tr><td>Speaker amp</td><td><strong>TI TAS2505</strong></td><td>I²C address <code>0x18</code>; mono class-D for the internal speaker.</td></tr>
+        <tr><td>Storage</td><td><strong>Toshiba THGBMNG5D1LBAIL</strong></td><td>4&nbsp;GB eMMC 5.0, driven in <strong>1-bit mode at 32&nbsp;MHz</strong>. Holds the ~311&nbsp;MB album image.</td></tr>
+        <tr><td>Charger</td><td><strong>TI BQ24232</strong></td><td>Single-cell LiPo charger, GPIO-controlled (no I²C).</td></tr>
+        <tr><td>Bluetooth</td><td><strong>Cypress CYBT-353027-02</strong></td><td>UART-attached HCI module — <em>the nRF radio is not used.</em></td></tr>
+        <tr><td>FPC connector</td><td>Omron XF3B-1945-31A</td><td>19-pin, 0.3&nbsp;mm pitch flex to the button/LED/jack face.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p>IC identities: <span class="src">Lines #5–70</span>, <span class="src">Discord #hardware, tkt1000, 2026-05-07</span>, and the device tree <span class="src">assets/sp1-midi-2026-05-13/boards/.../stem_player.dts</span>.</p></div>
+
+    <div class="box note">
+      <div class="box-h">◆ The nRF radio is dead weight</div>
+      <p>The TKT wiki states plainly: <em>"there is no antenna connected to the MCU on the stem player PCB."</em>
+      All Bluetooth goes through the CYBT module over UART. <strong>Do not</strong> enable
+      <code>CONFIG_BT_LL_SOFTDEVICE</code> or any Zephyr controller mode that drives the nRF radio — there's nothing
+      to radiate from. <span class="src">TKT wiki: Hardware-overview, 2026-05-12</span></p>
+    </div>
+
+    <h2>Flash memory map — where your firmware lives</h2>
+    <p>This is the single most important table for a firmware author. The nRF's internal flash is split into a
+      reserved bootloader and an application slot. <strong>Your code goes in the app slot. Never write below
+      <code>0x20000</code>.</strong></p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Partition</th><th>Offset</th><th>Size</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>bootloader</code></td><td><code>0x00000000</code></td><td>128&nbsp;KB</td><td>TE bootloader. The Track&nbsp;1+4 trigger lives here. <strong>Reserved.</strong></td></tr>
+        <tr><td><code>image-0</code> (app)</td><td><code>0x00020000</code></td><td><strong>892&nbsp;KB</strong></td><td>Application firmware — stock TE <em>or</em> your custom build.</td></tr>
+        <tr><td><code>storage</code></td><td><code>0x000ff000</code></td><td>4&nbsp;KB</td><td>Zephyr settings (in the sp1-midi BSP). Page <code>0xFF</code> reserved.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box danger">
+      <div class="box-h">▲ Bricking boundary</div>
+      <p>If your firmware extends below <code>FLASH_START = 0x20000</code> you overwrite the bootloader and lose the
+      two-button recovery path. Recovery then requires <strong>SWD with mass-erase</strong> — opening the device and
+      soldering. The 892&nbsp;KB app slot is enormous (sp1-midi uses ~168&nbsp;KB); you will not run out by accident.
+      <span class="src">references/15-bootloader-protocol.md — Flash layout constants</span></p>
+    </div>
+
+    <h2>The eMMC is separate</h2>
+    <p>Two different storage chips, two independent operations:</p>
+    <ul>
+      <li><strong>nRF internal flash (1&nbsp;MB)</strong> — holds firmware. Flashed via the bootloader.</li>
+      <li><strong>eMMC (4&nbsp;GB)</strong> — holds the audio album image (~311&nbsp;MB). Written via a separate upload path.</li>
+    </ul>
+    <p>Loading custom <em>stems</em> and loading custom <em>firmware</em> are unrelated. You can put your own music on
+      a stock device without touching firmware at all (the stock TE firmware plays any correctly-formatted album).
+      And the eMMC is <strong>not encrypted — just formatted strangely</strong> (8192-byte logical sectors of 16
+      native 512-byte blocks). <span class="src">Discord #hardware, tkt1000, 2026-05-07</span></p>
+
+    <h2>Peripheral map at a glance</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>nRF peripheral</th><th>Used for</th><th>Key pins</th></tr></thead>
+      <tbody>
+        <tr><td>USB Device</td><td>MIDI 2.0 + CDC ACM host link</td><td>standard nRF USB</td></tr>
+        <tr><td>I²C0 (TWIM0)</td><td>CS42L42 + TAS2505 control</td><td>SDA <code>P1.07</code>, SCL <code>P1.11</code></td></tr>
+        <tr><td>I²S0</td><td>Audio stream to codecs</td><td>BCLK <code>P0.12</code>, LRCK <code>P0.11</code>, SDOUT <code>P1.09</code></td></tr>
+        <tr><td>SPIM3 + GPIO</td><td>eMMC (1-bit, 32&nbsp;MHz)</td><td>CLK <code>P0.06</code>, DAT0 <code>P0.07</code>, CMD <code>P0.08</code></td></tr>
+        <tr><td>UART0</td><td>Bluetooth (CYBT)</td><td>TX <code>P1.02</code>, RX <code>P1.04</code>, Reset <code>P0.10</code></td></tr>
+        <tr><td>SAADC</td><td>4 faders + 2 button ladders + battery</td><td>7 channels</td></tr>
+        <tr><td>PWM2 / PWM3</td><td>4 Track LEDs / 4 Play LEDs</td><td>8 outputs</td></tr>
+        <tr><td>GPIOTE</td><td>Function button + power rails</td><td>fnc <code>P0.27</code>, btn-com <code>P1.10</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p>Pin assignments from <span class="src">stem_player.dts</span> and <span class="src">assets/SP-1-dev-2026-05-13/src/stemplayer_pins.h</span>. Full GPIO &amp; ADC tables are on the <a class="link" href="reference.html">cheat-sheet</a>.</p></div>
+
+    <h2>How the buttons work (and why Track 1+4 is special)</h2>
+    <p>The SP-1 reads its buttons through <strong>analog resistor ladders</strong>, not individual GPIOs. The Track
+      and Play buttons share one ADC channel (AIN0) with <strong>8 voltage thresholds each</strong> — enough to
+      distinguish multi-button combinations. <em>This is exactly why <strong>Track&nbsp;1 + Track&nbsp;4</strong> can be
+      detected as a distinct combo</em> and used as the bootloader trigger. The volume/transport rocker is a second
+      ladder (AIN1); the Function button is the one true discrete GPIO (<code>P0.27</code>, active-low).</p>
+
+    <div class="box tip">
+      <div class="box-h">✓ What to take away</div>
+      <p>Your firmware lives in the 892&nbsp;KB app slot at <code>0x20000</code>. It talks to codecs over I²C, streams
+      audio over I²S, reads the eMMC bit-banged, reads faders/buttons over the ADC, and drives LEDs over PWM. The BSP
+      gives you working drivers for all of this — your job is to orchestrate them.</p>
+    </div>
+
+    <div class="pager">
+      <a href="index.html"><span class="dir">← Prev</span><span class="ttl">00 · Introduction</span></a>
+      <a class="next" href="history.html"><span class="dir">Next →</span><span class="ttl">02 · How it was cracked</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power & lifecycle · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">09 · Lifecycle</div>
+    <h1>Power &amp; lifecycle</h1>
+    <p class="lede">The most common way to "brick" an SP-1 with custom firmware isn't a bad audio routine — it's
+      forgetting to implement power-off. The device has <strong>no hardware reset pin</strong>, so a firmware that can't
+      cleanly shut down or get back to the bootloader is a firmware that traps you. This page is the lifecycle you must
+      get right.</p>
+
+    <div class="box danger">
+      <div class="box-h">▲ ericlewis, in caps, for a reason</div>
+      <p><em>"ALWAYS REMEMBER TO PROGRAM IN YOUR POWER DOWN."</em> <span class="src">Discord #firmware, 2026-05-09</span>
+      emvee1968 shipped an early build with no power-off and had to <strong>disconnect the battery</strong> every time
+      to get back into the bootloader. Don't be that build.</p>
+    </div>
+
+    <h2>The power path</h2>
+    <p>USB-C never powers the chip directly. VBUS feeds the <strong>BQ24232</strong> LiPo charger, which feeds the system
+      rail, which feeds the 3.3&nbsp;V and 1.8&nbsp;V regulators that run the nRF, codecs, eMMC, and BT module.</p>
+    <pre><code>USB-C VBUS (5V) ──► BQ24232 charger ◄──► LiPo (3.7V nominal)
+                         │
+                         ▼  system rail
+                    3.3V LDO / 1.8V LDO ──► nRF52840, codecs, eMMC, BT, GPIO</code></pre>
+    <div class="box warn">
+      <div class="box-h">✕ Develop with a charged battery connected</div>
+      <p>The charger expects a battery as its storage element. With the cell <strong>disconnected</strong>, the regulators
+      see unstable transients on boot and the device may not enumerate. (That instability is also <em>why</em> yanking the
+      battery forces a reset — see recovery below.) Keep a charged cell in the loop while developing.</p>
+    </div>
+
+    <h2>The BQ24232 — GPIO, not I²C</h2>
+    <p>Unlike its I²C siblings, the BQ24232 is controlled purely by GPIO; charge parameters are set by board resistors,
+      not software. There's no fuel gauge — battery state is inferred from an ADC reading.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Signal</th><th>Pin</th><th>Dir</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><strong>nPGOOD</strong></td><td><code>P0.24</code></td><td>in</td><td>Low = USB power good. High = on battery only.</td></tr>
+        <tr><td><strong>nCHG</strong></td><td><code>P0.22</code></td><td>in</td><td>Low = charging in progress. High = full / fault / no USB.</td></tr>
+        <tr><td><strong>CE</strong></td><td><code>P0.21</code></td><td>out</td><td>Drive low to enable charging (active-low).</td></tr>
+        <tr><td><strong>ISET override</strong></td><td><code>P1.00</code></td><td>out</td><td>Switches charge-current setpoint (fast/slow). <em>Trust the DTS/pin-header P1.00, not the README's P0.19.</em></td></tr>
+        <tr><td>Battery sense</td><td><code>P0.28</code> (AIN4)</td><td>in</td><td>Divided battery voltage on SAADC ch 4. No fuel gauge — compute % from the voltage curve yourself.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The charger is configured to draw up to <strong>500&nbsp;mA</strong> from USB (set by the ISET resistor network),
+      so the SP-1 charges on any USB port without negotiation. <code>sp1-midi</code>'s <code>charger_bq24232.c</code> +
+      <code>PowerManager.cpp</code> wrap all of this. <span class="src">references/05-power-and-battery.md; TKT wiki: Battery-charger, 2026-05-12</span></p>
+
+    <h2>The clean power-down sequence</h2>
+    <p>The function button (<code>P0.27</code>, direct GPIO) is the power control; <code>sp1-midi</code> maps a 3-second
+      long-press to <code>INPUT_KEY_POWER</code>. Your handler should tear down in this order, then sleep:</p>
+    <div class="steps">
+      <div class="step"><h3>Mute &amp; reset the audio chips</h3><p>Assert CS42L42 reset (P0.15) and TAS2505 reset (P0.09) so nothing pops or draws current.</p></div>
+      <div class="step"><h3>Disable Bluetooth</h3><p>Assert the CYBT reset (P0.10), then de-power its UART.</p></div>
+      <div class="step"><h3>Stop the LEDs</h3><p>Stop driving the PWM outputs.</p></div>
+      <div class="step"><h3>Power down storage</h3><p>Disable the eMMC supply (P0.14 low) and assert eMMC reset (P1.08 low).</p></div>
+      <div class="step"><h3>Drop the button rail &amp; the oscillator</h3><p>Disable the button-common rail (P1.10 low) and the 3.072&nbsp;MHz audio oscillator (P0.13 low).</p></div>
+      <div class="step"><h3>Sleep the SoC</h3><p>Call <code>sys_poweroff()</code> (Zephyr <code>CONFIG_POWEROFF=y</code>) to enter nRF <code>SYSTEM_OFF</code>. The device wakes on USB-attach or a configured GPIO interrupt (function button).</p></div>
+    </div>
+    <pre><code><span class="c">// steps 1–6 are best-effort cleanup; step 7 is the real sleep</span>
+codec_assert_resets();        <span class="c">// P0.15, P0.09 low</span>
+bt_disable();                 <span class="c">// P0.10 low + UART off</span>
+leds_stop();
+gpio_low(P0_14); gpio_low(P1_08);   <span class="c">// eMMC supply + reset</span>
+gpio_low(P1_10);              <span class="c">// button rail</span>
+gpio_low(P0_13);              <span class="c">// 3.072 MHz osc</span>
+sys_poweroff();              <span class="c">// SYSTEM_OFF — wakes on USB / button</span></code></pre>
+    <div class="box cite"><div class="box-h">✦ Source</div><p>Sequence from the SP-1 skill's confirmed power-down list (<span class="src">references/05-power-and-battery.md</span>, <span class="src">known-unknowns.md — Power-off</span>). A complete <em>wake</em> configuration is still a known-unknown; <code>sp1-midi</code> doesn't demonstrate one fully.</p></div>
+
+    <h2>The looper's "BIG FIVE"</h2>
+    <p>The <a class="link" href="looper.html">tape-looper firmware</a> turns the no-reset-pin reality into a checklist
+      it never violates — a good template:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Rule</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>App linked at <code>0x20000</code></td><td>Never touch the bootloader region.</td></tr>
+        <tr><td>Feed the watchdog (&lt; 5&nbsp;s)</td><td>A hang becomes a reset, not a dead device.</td></tr>
+        <tr><td>Don't re-init bootloader-owned clocks/peripherals</td><td>Leaves the recovery path intact.</td></tr>
+        <tr><td><code>SYSTEM_OFF</code> returns to the bootloader</td><td>Power-off is always a route back in.</td></tr>
+        <tr><td>Clear <code>RESETREAS</code> on boot &amp; before sleep</td><td>Clean reset bookkeeping; pairs with reset breadcrumbs.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>Recovery when power-off is broken</h2>
+    <p>If you flash a build that can't shut down or reach the bootloader, two escapes:</p>
+    <ul>
+      <li><strong>Cold-start the bootloader combo:</strong> Track&nbsp;1 + Track&nbsp;4 + USB-C from off (the looper also adds a ~1.2&nbsp;s Track&nbsp;1+4 in-app recovery).</li>
+      <li><strong>Collapse the rail:</strong> with USB plugged in, briefly disconnect the battery — this drops system voltage hard enough to reset the nRF, which then re-enumerates into the bootloader if you're holding Track&nbsp;1+4. This is the literal escape emvee1968 used.</li>
+    </ul>
+    <div class="box tip">
+      <div class="box-h">✓ Build the escape in before you need it</div>
+      <p>Always wire <em>some</em> always-available path back to the bootloader into your firmware — a long-press power-off
+      and/or an in-app Track&nbsp;1+4 recovery — <strong>before</strong> you flash anything experimental. It's the
+      difference between a 5-second recovery and opening the case.</p>
+    </div>
+
+    <div class="pager">
+      <a href="codecs.html"><span class="dir">← Prev</span><span class="ttl">08 · Codecs &amp; I²S</span></a>
+      <a class="next" href="recovery.html"><span class="dir">Next →</span><span class="ttl">10 · Debug &amp; recovery</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

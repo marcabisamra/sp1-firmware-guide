@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The sp1-midi BSP · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">06 · The foundation</div>
+    <h1>The <code>sp1-midi</code> BSP</h1>
+    <p class="lede"><code>ericlewis/sp1-midi</code> is the only public, buildable starting point for SP-1 firmware. It is
+      <strong>not a stem player</strong> — it's a USB MIDI controller. But it ships working drivers for every
+      peripheral and a clean app skeleton, which is exactly what you want to build on.</p>
+    <div class="box cite"><div class="box-h">✦ Code of record</div><p><code>github.com/ericlewis/sp1-midi</code>, bundled at <span class="src">assets/sp1-midi-2026-05-13/</span>. Walkthrough: <span class="src">references/19-sp1-midi-bsp.md</span>.</p></div>
+
+    <h2>What it does out of the box</h2>
+    <p>Flash it and the SP-1 becomes a MIDI 2.0 controller: faders, buttons, and rockers emit MIDI over USB, with a CDC
+      serial console alongside for debugging.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Action</th><th>MIDI sent</th></tr></thead>
+      <tbody>
+        <tr><td>Move Fader 1–4</td><td>CC 1–4 on channel 1</td></tr>
+        <tr><td>Press Track 1–4</td><td>Notes 60–63 (C4–D#4), velocity 127</td></tr>
+        <tr><td>Press Play</td><td>MMC Play / Stop (toggle)</td></tr>
+        <tr><td>Volume Up / Down</td><td>CC 7 ±10 (clamped)</td></tr>
+        <tr><td>FF / RW rocker</td><td>Octave shift ±1 on the track notes</td></tr>
+        <tr><td>Function</td><td>MMC Record On / Off (toggle)</td></tr>
+        <tr><td>Long-press Function (3s)</td><td><code>INPUT_KEY_POWER</code> fires</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">assets/sp1-midi-2026-05-13/app/main.cpp lines 129–209 (on_input_event)</span>.</p></div>
+
+    <h2>Source layout</h2>
+    <pre><code>sp1-midi/
+├── CMakeLists.txt
+├── prj.conf
+├── app.overlay                  <span class="c">← USB descriptor overlay</span>
+├── boards/teenageengineering/stem_player/   <span class="c">← board def (DTS, pinctrl)</span>
+├── drivers/
+│   ├── audio/                   <span class="c">← CS42L42 + TAS2505 codec drivers</span>
+│   └── charger/                 <span class="c">← BQ24232</span>
+├── include/stem_player/Smf.hpp  <span class="c">← C++ facade over Zephyr SMF</span>
+├── subsys/
+│   ├── power/                   <span class="c">← PowerManager</span>
+│   ├── storage/emmc/            <span class="c">← EmmcDriver + StemEmmcDevice (present, unused)</span>
+│   └── system/                  <span class="c">← Watchdog + ResetBreadcrumbs</span>
+└── app/
+    ├── main.cpp                 <span class="c">← boot + USB + input</span>
+    ├── AppStateMachine.{hpp,cpp} <span class="c">← the HSM</span>
+    ├── MidiController.{hpp,cpp}
+    └── Leds.{hpp,cpp}           <span class="c">← PWM LED helpers</span></code></pre>
+
+    <h2>The architecture you'll extend</h2>
+    <p>The app is a <strong>hierarchical state machine</strong> built on Zephyr's SMF (State Machine Framework) with a
+      C++ facade. The states are deliberately minimal:</p>
+    <pre><code><span class="k">enum</span> AppState {
+    STATE_IDLE,          <span class="c">// boot; wait for USB MIDI</span>
+    STATE_RUNNING,       <span class="c">// poll faders, route buttons, animate LEDs</span>
+    STATE_SHUTTING_DOWN, <span class="c">// mute outputs, prepare for sleep</span>
+    STATE_DEEP_SLEEP,    <span class="c">// sys_poweroff()</span>
+};</code></pre>
+    <p>Subsystems are static globals — practical for embedded:</p>
+    <pre><code><span class="k">static</span> midi::MidiController g_midi;
+<span class="k">static</span> leds::Leds           g_leds;
+<span class="k">static</span> power::PowerManager  g_power;</code></pre>
+
+    <h3>Subsystems you inherit (this is the gold)</h3>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Subsystem</th><th>What it gives you</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Audio codec drivers</strong></td><td>CS42L42 + TAS2505 brought up on I²C0. Configured at boot — but the BSP never streams audio. You add the I²S feed.</td></tr>
+        <tr><td><strong>EmmcDriver + StemEmmcDevice</strong></td><td>Zephyr disk driver over the bit-banged eMMC. <em>Present but unused</em> by the MIDI app — wire it up for playback.</td></tr>
+        <tr><td><strong>PowerManager</strong></td><td>Battery %, charge state, USB attach. Drives the sleep transition.</td></tr>
+        <tr><td><strong>Watchdog</strong></td><td>Multi-channel WDT. Register a channel, <code>feed()</code> it, or the device resets — saves you from dead-state bugs.</td></tr>
+        <tr><td><strong>ResetBreadcrumbs</strong></td><td>Records why the last reset happened. Invaluable for debugging crashes without SWD.</td></tr>
+        <tr><td><strong>Charger driver</strong></td><td>BQ24232 via GPIO (nPGOOD, nCHG, CE, ISET).</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="box warn">
+      <div class="box-h">✕ What this BSP deliberately does NOT do</div>
+      <ul style="margin-bottom:0">
+        <li><strong>No audio playback</strong> — codecs are configured but never fed I²S data.</li>
+        <li><strong>No eMMC reads</strong> — driver present, app never calls it.</li>
+        <li><strong>No Bluetooth</strong> — UART pins defined, no stack.</li>
+        <li><strong>No effects, no auto power-off</strong> — long-press is detected but the app must call <code>sys_poweroff()</code> itself.</li>
+      </ul>
+    </div>
+    <div class="box note">
+      <div class="box-h">◆ ericlewis's own warning</div>
+      <p><em>"repo above turns your sp1 into a midi controller — unless you have your own fw to reflash ur f'd tho — so
+      dont just flash for fun."</em> <span class="src">Discord #firmware, 2026-05-09</span> Flashing this replaces the
+      stem player until you reflash. Don't do it on your only device.</p>
+    </div>
+
+    <h2>How to extend it</h2>
+    <h3>Add a new state</h3>
+    <p>Per the README workflow:</p>
+    <ol>
+      <li>Add source files to <code>APP_SOURCES</code> in <code>CMakeLists.txt</code>.</li>
+      <li>Extend <code>AppMachine</code> in <code>AppStateMachine.hpp</code> with your subsystem pointers.</li>
+      <li>Add new states to the <code>AppState</code> enum and the state table (e.g. <code>AUDIO_PLAYING</code>, <code>EFFECT_ACTIVE</code>).</li>
+      <li>Initialize your subsystems in <code>main.cpp</code> before <code>app::run()</code>.</li>
+    </ol>
+
+    <h3>Add audio playback (the headline extension)</h3>
+    <div class="steps">
+      <div class="step"><h3>Drop in the reference code</h3><p>Add <code>audiothingies</code> + <code>storagethingies</code> sources into <code>subsys/</code> (or a new <code>audio/</code> tree) and into <code>APP_SOURCES</code>.</p></div>
+      <div class="step"><h3>Instantiate the engine</h3><p>Create <code>audio::AudioEngine</code> and <code>storage::DiskManager</code> as globals or <code>AppMachine</code> members; init them after the codecs come up.</p></div>
+      <div class="step"><h3>Wire the I²S TX path</h3><p>Use <code>backends/zephyr_i2s_tx.cpp</code> to call <code>AudioEngine::render_block()</code> for each DMA buffer.</p></div>
+      <div class="step"><h3>Add transport states</h3><p>An <code>AUDIO_PLAYING</code> state plus a transport sub-state for FF / RW / pause.</p></div>
+    </div>
+    <p>The details — and why the audio format is the hard part — are on the next page. → <a class="link" href="audio.html">Audio engine &amp; format</a></p>
+
+    <div class="pager">
+      <a href="build.html"><span class="dir">← Prev</span><span class="ttl">05 · Build environment</span></a>
+      <a class="next" href="audio.html"><span class="dir">Next →</span><span class="ttl">07 · Audio engine &amp; format</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

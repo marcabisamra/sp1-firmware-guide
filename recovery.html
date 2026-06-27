@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Debug & recovery · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">10 · Safety net</div>
+    <h1>Debug &amp; recovery</h1>
+    <p class="lede">How you'll find bugs and how you'll get out of trouble. Two realities shape everything here: there's
+      <strong>no factory debug header</strong>, and there's <strong>no reset pin</strong>. So you either commit to
+      soldering SWD, or you get good at debugging through the serial console — and either way you keep a recovery path
+      ready before you flash.</p>
+
+    <h2>Every way to talk to the device</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Interface</th><th>Hardware</th><th>What it gives you</th></tr></thead>
+      <tbody>
+        <tr><td>Track&nbsp;1+4 + USB-C bootloader</td><td>USB-C cable</td><td>Flash firmware (no soldering). <strong>Cannot read</strong> existing firmware.</td></tr>
+        <tr><td>solderless.engineering</td><td>Chromium browser</td><td>Same, friendly UI.</td></tr>
+        <tr><td>USB CDC ACM console</td><td>Working app firmware</td><td>Serial logs / shell at runtime — your main debugger without SWD.</td></tr>
+        <tr><td><strong>SWD header (you add it)</strong></td><td>Open + solder + debugger</td><td>Breakpoints, RAM/flash read-write. Mass-erase + reflash even with APPROTECT set.</td></tr>
+        <tr><td>eMMC test points</td><td>Open + clip leads</td><td>Read/write the eMMC directly, bypassing the nRF.</td></tr>
+        <tr><td>LED bit-bang dump</td><td>1-page firmware + camera</td><td>Read flash via LEDs on a still-locked chip (slow).</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">references/04-debug-interfaces.md</span> + <span class="src">references/23-physical-disassembly.md</span>.</p></div>
+
+    <h2>Debugging without a debugger</h2>
+    <p>Most people develop without SWD at first. It's slower (no breakpoints) but entirely workable if you lean on four
+      things:</p>
+    <div class="kv">
+      <dt>CDC serial console</dt><dd>Build with <code>-DSNIPPET=cdc-acm-console</code>; the device exposes a serial port and a <code>stem&gt;</code> shell. Sprinkle <code>LOG_INF()</code> / <code>printk()</code> and watch with <code>screen</code> / <code>picocom</code>.</dd>
+      <dt>A status line</dt><dd>The tape looper prints one line per loop — sample rate, song, transport, battery, BPM, per-track state, and crucially <code>ovr=0 rerr=0 werr=0</code> health counters. A live status line is the cheapest "is it healthy?" signal you can build.</dd>
+      <dt>ResetBreadcrumbs</dt><dd>The BSP records <em>why</em> the last reset happened (normal / watchdog / panic) in persistent storage. After a crash-reboot, read it back — this is how you debug a device that resets faster than you can read logs.</dd>
+      <dt>The watchdog</dt><dd>A fed watchdog turns a hang into a reboot you can diagnose, instead of a dead device. Register a channel, <code>feed()</code> it in your loop.</dd>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ The console's blind spot</div>
+      <p>The CDC console only exists <em>after</em> the app boots far enough to bring up USB. If your firmware crashes
+      before that, you see nothing — that's exactly the case SWD exists for. A clean reboot-on-fault handler (turn any
+      fatal fault into <code>sys_reboot()</code>, as the looper does) at least keeps a pre-USB crash from looking like a
+      brick.</p>
+    </div>
+
+    <h2>Adding an SWD header (the real-development path)</h2>
+    <p>The community consensus is blunt: <em>"you can't properly develop firmware for this without fully opening the
+      device and adding the SWD header."</em> TimK did exactly that. You need <strong>SWDIO, SWCLK, GND, and VDD</strong>
+      (or a matched 3.3&nbsp;V), and a probe — J-Link, a DAPLink board, Black Magic Probe, or an nRF52 DK reflashed as a
+      probe. Then <code>ninja -C build flash</code> works directly and you get breakpoints.</p>
+    <div class="box note">
+      <div class="box-h">◆ Pad locations: check the wiki first</div>
+      <p>As of the skill's synthesis date the <strong>exact SWDIO/SWCLK pad locations were not yet publicly
+      documented</strong> — TimK said he'd add them to <code>github.com/timknapen/SP-1-dev/wiki</code>. Check there (and
+      the test-points page) before opening the device; if it's still missing, ask in Discord rather than probing blind.</p>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ APPROTECT still applies</div>
+      <p>A factory chip has APPROTECT set, so SWD will <strong>not</strong> read the original firmware — only mass-erase +
+      reprogram (which wipes stock firmware). That's fine for developing <em>your own</em> firmware. Reading the original
+      out needs the glitch attack from <a class="link" href="history.html">chapter 02</a>.</p>
+    </div>
+
+    <h2>Opening the device safely</h2>
+    <p>You only need to open it for SWD, eMMC test points, or mods. The case is <strong>glued, not screwed</strong>.</p>
+    <ul>
+      <li><strong>Heat, don't force.</strong> The white plastic piece around the play/function buttons is glued in one
+        spot. Warm it with a <em>hairdryer</em> (not a hot-air gun — too hot melts plastic), then ease it with a plastic
+        spudger over several heat-and-pry cycles. Brute force bends it permanently.</li>
+      <li><strong>The FPC is the fragile part.</strong> The 19-pin, 0.3&nbsp;mm-pitch Omron flex connects the button/LED
+        face to the main board. Lift the ZIF lever, slide the ribbon out (never pull straight up), reverse to reseat.</li>
+      <li><strong>Right-angle, low-profile SWD header</strong> so the case still closes.</li>
+      <li>Reassembly: the original adhesive usually re-sticks; if not, a little VHB tape — never superglue.</li>
+    </ul>
+
+    <div class="box gold">
+      <div class="box-h">▲ The single most common "brick" is not a brick</div>
+      <p>After reassembly, ~90% of "it won't turn on" cases are an <strong>FPC that looks seated but isn't.</strong>
+      Symptoms: powers on but no buttons/LEDs respond. <strong>Reseat the ribbon before assuming hardware failure.</strong>
+      The Lines thread's canonical example: "just bricked one… scratch that, I just fixed it, guess the ribbon cable was
+      slightly bent." <span class="src">Lines #118</span></p>
+    </div>
+
+    <h2>Recovery checklist (device won't boot)</h2>
+    <ol>
+      <li><strong>Reseat the FPC.</strong> (Solves most cases.)</li>
+      <li>Check the battery connector — the small plug works loose.</li>
+      <li>Plug in USB-C and confirm a charge indication (proves the USB power path).</li>
+      <li>Try <strong>Track&nbsp;1 + Track&nbsp;4 + USB-C</strong> — if it enumerates as a serial/CDC device, the chip is alive and you can reflash.</li>
+      <li>Still dead? Reopen and inspect for trace damage near the FPC.</li>
+    </ol>
+    <p>If a trace is damaged, repair is possible with conductive ink or fine bond wire, but most people stop here. The
+      best insurance remains the one from the <a class="link" href="power.html">lifecycle page</a>: never flash without a
+      working route back to the bootloader already in your firmware.</p>
+
+    <div class="pager">
+      <a href="power.html"><span class="dir">← Prev</span><span class="ttl">09 · Power &amp; lifecycle</span></a>
+      <a class="next" href="internals.html"><span class="dir">Next →</span><span class="ttl">11 · Player internals</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

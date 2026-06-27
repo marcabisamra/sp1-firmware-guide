@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio engine &amp; format · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">07 · The hard part</div>
+    <h1>Audio engine &amp; format</h1>
+    <p class="lede">Making the SP-1 play <em>your</em> stems is the real prize — and the on-disk audio format is where
+      almost everyone (humans and AIs) gets it wrong. This page gives you the exact byte layout, the in-memory
+      representation, and the reference code that decodes both, so you don't have to guess.</p>
+
+    <div class="box gold">
+      <div class="box-h">▲ The most-cited hallucination on this whole device</div>
+      <p>"The SP-1 stores audio as 24-bit PCM little-endian." <strong>This is wrong</strong>, and TimK called it out by
+      name: <em>"24 bit PCM little endian … that doesn't make sense."</em> There are two distinct representations and
+      neither is "little-endian PCM." Get this right and you're ahead of most. <span class="src">Discord #general, tkt1000, 2026-05-10</span></p>
+    </div>
+
+    <h2>High-level format</h2>
+    <div class="kv">
+      <dt>Sample rate</dt><dd>48&nbsp;kHz</dd>
+      <dt>Bit depth</dt><dd>24-bit signed, per channel per stem</dd>
+      <dt>Stems</dt><dd>4 — each stereo (L + R) → 8 channels per frame</dd>
+      <dt>Bytes per stem/frame</dt><dd>6 (2 channels × 3 bytes)</dd>
+      <dt>Bytes per frame</dt><dd>24 (4 stems × 6 bytes)</dd>
+      <dt>Frames per TE sector</dt><dd>340 → 8160 audio bytes</dd>
+      <dt>TE sector size</dt><dd>8192 bytes = 16 native 512-byte eMMC blocks</dd>
+      <dt>Per-sector trailer</dt><dd>a small side-data trailer at the end of block 0 (tempo + envelopes; see below)</dd>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Code of record</div><p>The authoritative decoder is <span class="src">assets/storagethingies-2026-05-09/DiskManager.hpp::decode_te_frame_payload_i32</span>. Doubly confirmed by the encoder <span class="src">wav-parser.js::encodeToSP1</span>. Full spec in <span class="src">references/09-audio-format-spec.md</span>.</p></div>
+
+    <h2>The 6-byte stem layout (the part that confuses everyone)</h2>
+    <p>Within a single stem's 6 bytes, the left and right channels are <strong>interleaved at the byte level</strong>.
+      The MSBs of L and R sit next to each other; the LSBs sit next to each other; the mid bytes sit on the outside:</p>
+    <pre><code>Byte:    0      1      2      3      4      5
+Sample:  L_mid  L_msb  R_msb  L_lsb  R_lsb  R_mid
+Bits:    8-15   16-23  16-23  0-7    0-7    8-15</code></pre>
+    <p>This is the authoritative decoder, verbatim:</p>
+    <pre><code><span class="k">inline void</span> <span class="f">decode_te_frame_payload_i32</span>(<span class="k">const</span> uint8_t* frame_payload,
+                                        DecodedStemFrameI32* frame_out) {
+    <span class="k">for</span> (size_t stem = 0; stem &lt; kStemsPerFrame; ++stem) {
+        <span class="k">const</span> uint8_t* data = frame_payload + stem * kStemFrameSize;
+
+        frame_out-&gt;left[stem]  = (<span class="k">static_cast</span>&lt;int32_t&gt;(<span class="k">static_cast</span>&lt;int8_t&gt;(data[<span class="n">1</span>])) &lt;&lt; <span class="n">16</span>) |
+                                 (<span class="k">static_cast</span>&lt;uint32_t&gt;(data[<span class="n">0</span>]) &lt;&lt; <span class="n">8</span>) |
+                                  <span class="k">static_cast</span>&lt;uint32_t&gt;(data[<span class="n">3</span>]);
+
+        frame_out-&gt;right[stem] = (<span class="k">static_cast</span>&lt;int32_t&gt;(<span class="k">static_cast</span>&lt;int8_t&gt;(data[<span class="n">2</span>])) &lt;&lt; <span class="n">16</span>) |
+                                 (<span class="k">static_cast</span>&lt;uint32_t&gt;(data[<span class="n">5</span>]) &lt;&lt; <span class="n">8</span>) |
+                                  <span class="k">static_cast</span>&lt;uint32_t&gt;(data[<span class="n">4</span>]);
+    }
+}</code></pre>
+    <p>Note the signed-ness trick: the MSB byte is cast to <code>int8_t</code> <em>first</em> (sign-extending into the
+      upper bits) and then shifted left by 16 — giving a 24-bit signed value in the low 24 bits of an
+      <code>int32_t</code>. It is <strong>not</strong> little-endian, not big-endian; it's a custom interleave where
+      neighboring bytes can belong to different channels.</p>
+
+    <h2>Three representations — keep them straight</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Where</th><th>Format</th></tr></thead>
+      <tbody>
+        <tr><td><strong>On disk</strong></td><td>6 bytes per stem in the interleaved <code>L_mid, L_msb, R_msb, L_lsb, R_lsb, R_mid</code> order above.</td></tr>
+        <tr><td><strong>In memory</strong></td><td><code>int32_t</code> per channel, right-aligned 24-bit (max ±8,388,607 = 2²³−1).</td></tr>
+        <tr><td><strong>On the I²S wire</strong></td><td>Depends on I²S config — typically 32-bit slots carrying 24-bit right-aligned samples.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>For float ↔ packed conversion the engine uses <code>float_to_pcm_right24_fast()</code>: clamp to ±1.0, multiply
+      by <code>8388607.0f</code>. The name says it all — <strong>right</strong>-aligned, <strong>24</strong>-bit.
+      <span class="src">assets/audiothingies-2026-05-09/PcmPacking.hpp</span></p>
+
+    <div class="box warn">
+      <div class="box-h">✕ The "correct claim" phrasing</div>
+      <p>Say: <em>"Audio samples are 24-bit signed. In memory they sit right-aligned in <code>int32_t</code> containers.
+      On disk, each stem stores 6 bytes per frame in an interleaved order — neighboring bytes can belong to different
+      channels."</em> Never say "24-bit little-endian PCM."</p>
+    </div>
+
+    <h2>The reference engine: <code>audiothingies</code> + <code>storagethingies</code></h2>
+    <p>ericlewis shared two zips of <strong>clean-room C++17 reimplementations</strong> of the stock audio + storage
+      stack (Discord #firmware, 2026-05-09). They're bundled in the skill and are your map for building a player:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Bundle</th><th>Contains</th></tr></thead>
+      <tbody>
+        <tr><td><code>audiothingies</code></td><td>AudioEngine, StockRuntimeMixer, VarispeedResampler, StemEffectRack, all 5 effect nodes, PcmPacking, the Zephyr I²S TX backend.</td></tr>
+        <tr><td><code>storagethingies</code></td><td>EmmcDriver, DiskManager, StemEmmcDevice, and the frame decoder above.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box note">
+      <div class="box-h">◆ A "proper BSP" with audio is in development</div>
+      <p>ericlewis: <em>"im in the middle of a proper bsp for zephyr for everyone but quite busy."</em> The public
+      <code>sp1-midi</code> MIDI controller is a precursor; the audio-complete BSP is the eventual deliverable. Until
+      then these zips are your reference. <span class="src">Discord #firmware, 2026-05-09</span></p>
+    </div>
+
+    <h2>The eMMC and the tape trick</h2>
+    <p>The eMMC is driven in <strong>1-bit mode at 32&nbsp;MHz</strong> — High Speed mode is not enabled, and higher
+      clocks are unreliable. Don't try to go faster. The chip is <strong>not encrypted, just formatted strangely</strong>.</p>
+    <p>Within each sector the 4 TE blocks are stored in physical order <strong>0 / 2 / 1 / 3</strong>. This interleave is
+      what enables tape-style fast-forward/rewind: at speed, the firmware reads <em>less</em> data per sector by skipping
+      blocks. Measured FF tops out around <strong>2.0–2.5×</strong> before you have to start jumping whole eMMC blocks —
+      a frontier that no public custom firmware has fully conquered. <span class="src">references/11-block-interleaving-tape-fx.md; tkt1000, Discord #firmware, 2026-05-09</span></p>
+
+    <h2>The per-sector trailer (for a custom encoder)</h2>
+    <p>If you write your own WAV→album encoder, here's what the solderless encoders actually write into each sector's
+      trailer (end of block 0). It evolved between versions — the 2026-05-18 form is canonical:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Offset in sector</th><th>Type</th></tr></thead>
+      <tbody>
+        <tr><td>Sync clock (added 2026-05-18)</td><td>2040</td><td><code>uint16</code> LE, wraps mod 49152</td></tr>
+        <tr><td>Tempo</td><td>2042</td><td><code>uint16</code> LE = <code>(48000·60)/(24·bpm)</code></td></tr>
+        <tr><td>Per-stem peak envelope ×4</td><td>2044</td><td>4× <code>uint8</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ Trailer myths to avoid</div>
+      <ul style="margin-bottom:0">
+        <li><strong>No per-block trailers.</strong> The encoder writes one trailer per <em>sector</em>, not four per-block ones.</li>
+        <li>Tempo is the formula above — <strong>not</strong> "samples-per-tick" and not "Q8.8 BPM."</li>
+        <li>The 2026-05-12 encoder wrote <strong>no</strong> sync counter at all; only the 2026-05-18 one does, once per sector.</li>
+        <li>The TKT wiki documents a fuller layout (2 sync + 2 tempo + 4 LED per block) that stock firmware <em>can read</em>; encoders ship only the small subset needed for tempo + level meters.</li>
+      </ul>
+    </div>
+
+    <div class="box danger">
+      <div class="box-h">▲ There is no canonical "prepare stems" workflow</div>
+      <p>An AI once invented a numbered stem-prep procedure; TimK: <em>"step 4 in the workflow to prepare stems is
+      nonsense."</em> Nobody has published a canonical numbered workflow. Describe the <strong>components</strong>
+      instead: (1) stem separation — emvee1968 used HT Demucs FT; (2) format conversion to the eMMC layout above;
+      (3) USB upload via the bootloader's <code>0x39</code> path. Don't fabricate steps between them.
+      <span class="src">references/21-original-firmware-stems.md; hallucination-watchlist.md</span></p>
+    </div>
+
+    <div class="pager">
+      <a href="bsp.html"><span class="dir">← Prev</span><span class="ttl">06 · The sp1-midi BSP</span></a>
+      <a class="next" href="codecs.html"><span class="dir">Next →</span><span class="ttl">08 · Codecs &amp; I²S: make sound</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

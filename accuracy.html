@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Don't hallucinate · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">15 · Accuracy</div>
+    <h1>Don't hallucinate</h1>
+    <p class="lede">This page exists because the SP-1 community has publicly corrected AI-generated nonsense about this
+      device — by name, with receipts. If you build firmware with an AI assistant (a legitimate, common approach here),
+      keep this list in front of you. A confidently wrong opcode or byte layout costs hours.</p>
+
+    <div class="box gold">
+      <div class="box-h">▲ The meta-rule</div>
+      <p>When you can't verify a factual claim against the bundled source, the public repos, or the skill, the correct
+      answer is <em>"I'm not sure — verify with the live Discord or ask TimK / ericlewis."</em> <strong>Hallucinating a
+      specific number, opcode, pin, or behavior is worse than admitting uncertainty.</strong></p>
+    </div>
+
+    <h2>The three errors TimK called out by name</h2>
+    <p>Word-for-word from Discord #general, 2026-05-10, responding to an AI summary of the Lines archive.</p>
+
+    <div class="box warn">
+      <div class="box-h">✕ Error 1 — "24-bit PCM little-endian"</div>
+      <p><strong>Wrong:</strong> "The SP-1 stores audio as 24-bit PCM little-endian." TimK: <em>"24 bit PCM little
+      endian … that doesn't make sense."</em></p>
+      <p style="margin-bottom:0"><strong>Right:</strong> In memory, right-aligned 24-bit signed in <code>int32_t</code>.
+      On disk, 6 bytes per stem interleaved as <code>L_mid, L_msb, R_msb, L_lsb, R_lsb, R_mid</code> — neighboring bytes
+      belong to different channels. → <a class="link" href="audio.html">Audio format</a></p>
+    </div>
+
+    <div class="box warn">
+      <div class="box-h">✕ Error 2 — "Python and Rust tools in tkt1000's repo"</div>
+      <p><strong>Wrong:</strong> TimK: <em>"the python and rust tools being in my repo … that doesn't make sense."</em></p>
+      <p style="margin-bottom:0"><strong>Right:</strong> <code>github.com/timknapen/SP-1-dev</code> is a
+      <em>documentation</em> repo — <code>README.md</code>, <code>stemplayer_pins.h</code>, images, and a wiki. No
+      tools. The Zephyr BSP is ericlewis's separate <code>sp1-midi</code>. Name the exact repo and file, or don't claim
+      the tool exists.</p>
+    </div>
+
+    <div class="box warn">
+      <div class="box-h">✕ Error 3 — "Step 4 in the stem-prep workflow"</div>
+      <p><strong>Wrong:</strong> A numbered "prepare stems" procedure. TimK: <em>"step 4 in the workflow to prepare
+      stems is nonsense."</em></p>
+      <p style="margin-bottom:0"><strong>Right:</strong> No canonical numbered workflow has been published. Describe the
+      <em>components</em> (stem separation → format conversion → USB upload) and cite who did each. Don't invent steps.</p>
+    </div>
+
+    <h2>Identity &amp; product traps</h2>
+    <div class="kv">
+      <dt>TimK ≠ ericlewis</dt><dd>Two different people. TimK = tkt1000 = timknapen (firmware, hardware, bootloader). ericlewis (audio engine, storage, the BSP). Different repos.</dd>
+      <dt>SP-1 ≠ PO-32</dt><dd><code>libpo32</code> is for the TE PO-32 Tonic (acoustic data transfer). The SP-1 uses USB CDC + eMMC. Don't merge concepts.</dd>
+      <dt>Name the firmware</dt><dd>There are 5+ distinct firmwares. "It's in the firmware" is meaningless — say <em>which</em> (stock TE / sp1-midi / emvee1968 / virtualflannel / TimK's).</dd>
+      <dt>sp1-midi's app/</dt><dd>It's a MIDI controller. It does <strong>not</strong> play audio, apply effects, or read the eMMC. Don't look there to explain playback — look in <code>audiothingies</code>.</dd>
+    </div>
+
+    <h2>Protocol-byte traps (these have burned real code)</h2>
+    <div class="box danger">
+      <div class="box-h">▲ State-query reply is raw integers, not ASCII</div>
+      <p>The <code>0x53</code> 5-byte payload is raw bytes 0–9, stringified with <code>Array.from(p).join('')</code> →
+      <code>"00100"</code> / <code>"10510"</code>. Using <code>String.fromCharCode</code> yields control characters and
+      a silent boot-mode-check failure. <strong>This bug hit the dumper project on 2026-05-14.</strong></p>
+    </div>
+    <ul>
+      <li><code>0x52</code> is a <strong>state query</strong>, not a "version check." No version exists in the protocol.</li>
+      <li>The <code>0x39</code> album packet is exactly <code>chunk_n (LE32) | byte_offset (LE32) | 128B</code> = 136 bytes. <strong>No magic, no sub-command, no in-header checksum.</strong></li>
+      <li>Field two is an <strong>absolute byte offset</strong>, not a "sector address."</li>
+      <li>The host does <strong>not</strong> set <code>GPREGRET = 0x1A96</code> — never in any host implementation.</li>
+      <li><code>0x39</code> chunks are <strong>fire-and-forget</strong>; not ACK'd per packet.</li>
+      <li>Firmware flash does <strong>not</strong> need a "flash mode" before <code>0x46</code>.</li>
+    </ul>
+
+    <h2>Hardware / format traps</h2>
+    <ul>
+      <li><strong>eMMC clock is 32&nbsp;MHz, 1-bit mode.</strong> High Speed is not enabled; don't claim faster.</li>
+      <li><strong>The eMMC is not encrypted</strong> — just formatted strangely (8192-byte sectors of 16 blocks).</li>
+      <li><strong>No working public Bluetooth firmware</strong> exists. sp1-midi has BT pins, no stack. emvee1968's is unreleased.</li>
+      <li><strong>No per-block trailers</strong> in encoder output — one trailer per sector. Tempo = <code>(48000·60)/(24·bpm)</code>, not "samples-per-tick."</li>
+      <li><strong>solderless.engineering is online</strong> as of 2026-05-18 (it was offline 2026-05-09 to ~05-17). Verify current state if it matters.</li>
+      <li>Don't fabricate Lines <strong>post numbers.</strong> Cite by author + date if unsure.</li>
+    </ul>
+
+    <div class="box tip">
+      <div class="box-h">✓ A workflow that keeps you honest</div>
+      <ol style="margin-bottom:0">
+        <li>Before asserting a byte, pin, opcode, or speed — find it in the bundled source (<code>assets/</code>) or a named-author post.</li>
+        <li>Cite it inline: <code>[code: path]</code>, <code>[Discord #ch, author, date]</code>, or <code>[Lines #N]</code>.</li>
+        <li>If you can't find it, say so. Uncertainty beats a confident fabrication every time on this device.</li>
+      </ol>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p>Everything here is from <span class="src">hallucination-watchlist.md</span> and <span class="src">corrections.md</span> in the skill.</p></div>
+
+    <div class="pager">
+      <a href="state.html"><span class="dir">← Prev</span><span class="ttl">14 · Who built what</span></a>
+      <a class="next" href="reference.html"><span class="dir">Next →</span><span class="ttl">16 · Sources &amp; cheat-sheet</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

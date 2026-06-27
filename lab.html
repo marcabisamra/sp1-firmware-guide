@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your first firmware · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">12 · Hands-on</div>
+    <h1>Your first firmware</h1>
+    <p class="lede">Putting it together. A concrete, low-risk first project — drive the LEDs from code you wrote — then
+      the staged path from there to a stem player. The goal of the first build is not to be impressive; it's to prove
+      your whole toolchain and flash loop work end to end.</p>
+
+    <div class="box danger">
+      <div class="box-h">▲ Read this before you flash anything</div>
+      <ul style="margin-bottom:0">
+        <li>Flashing custom firmware <strong>overwrites the stock TE firmware.</strong> You can't get it back unless you have a stock binary (not publicly distributed).</li>
+        <li>Develop on a unit you can afford to brick, not your only/favorite one.</li>
+        <li>Your firmware <strong>must</strong> bring up USB and handle the function-button long-press, or recovery gets harder.</li>
+        <li>Never write below <code>0x20000</code>. Recovery from a wiped bootloader needs SWD.</li>
+      </ul>
+    </div>
+
+    <h2>The plan</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Stand up the toolchain</h3>
+        <p>Install Zephyr + SDK, clone <code>sp1-midi</code>, and build it <em>unmodified</em> first. Confirm you get a
+          <code>build/zephyr/zephyr.bin</code>. Don't flash yet. → <a class="link" href="build.html">Build environment</a></p>
+      </div>
+      <div class="step">
+        <h3>Prove the flash loop</h3>
+        <p>Enter the bootloader (Track&nbsp;1+4 + USB-C), flash the stock <code>sp1-midi</code> build via the solderless
+          firmware utility, and confirm the device enumerates as a MIDI controller and as a CDC serial port. Open the
+          serial port and watch for the <code>stem&gt;</code> shell. <em>Now you know your loop works.</em></p>
+      </div>
+      <div class="step">
+        <h3>Make one visible change you wrote</h3>
+        <p>Edit the LED behavior so it's unmistakably <em>yours</em> — e.g. a startup chase across the 8 LEDs. This is
+          the smallest change that proves your code is running on the device. Code below.</p>
+      </div>
+      <div class="step">
+        <h3>Iterate with logs</h3>
+        <p>Add <code>LOG_INF()</code> calls, rebuild, reflash, read the CDC console. Without SWD this is your debugger.
+          The <code>ResetBreadcrumbs</code> subsystem tells you why the last reset happened — lean on it.</p>
+      </div>
+      <div class="step">
+        <h3>Then, and only then, reach for audio</h3>
+        <p>Once the loop is comfortable, integrate <code>audiothingies</code> / <code>storagethingies</code> and add an
+          <code>AUDIO_PLAYING</code> state. This is a real project, not an afternoon. → <a class="link" href="audio.html">Audio engine</a></p>
+      </div>
+    </div>
+
+    <h2>Step 3 in detail: an LED chase you wrote</h2>
+    <p>The BSP already initializes the 8 LEDs on PWM2 (Track) and PWM3 (Play) and exposes a <code>Leds</code> helper.
+      The 8 LEDs are: Track&nbsp;1–4 and Play&nbsp;1–4. A minimal startup animation in your <code>main()</code>, after
+      the LED setup and before <code>app::run()</code>, might look like this (illustrative — match the BSP's actual
+      <code>Leds</code> API):</p>
+    <pre><code><span class="c">// Sweep all 8 LEDs once at boot so you can SEE your code ran.</span>
+<span class="k">for</span> (<span class="k">int</span> pass = 0; pass &lt; 2; ++pass) {
+    <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; 8; ++i) {
+        g_leds.<span class="f">set</span>(i, <span class="n">255</span>);     <span class="c">// full brightness</span>
+        k_msleep(<span class="n">60</span>);
+        g_leds.<span class="f">set</span>(i, <span class="n">0</span>);
+    }
+}
+LOG_INF(<span class="s">"hello from my firmware"</span>);   <span class="c">// shows up in the stem&gt; console</span></code></pre>
+    <div class="box tip">
+      <div class="box-h">✓ Why an LED change is the right first step</div>
+      <p>It touches no risky subsystem, needs no audio data, and is impossible to misread: either your sweep runs or it
+      doesn't. It also exercises the full pipeline — your edit, the build, the bootloader flash, the running app — which
+      is exactly what you're trying to validate. (It's the same primitive zee_33 used to <em>exfiltrate firmware</em>
+      over the LEDs, so you're in good company.)</p>
+    </div>
+
+    <h2>Add a new state the BSP way</h2>
+    <p>When you're ready for behavior beyond a boot animation, follow the BSP's extension recipe rather than hacking
+      <code>main()</code>:</p>
+    <ol>
+      <li>Add your <code>.cpp</code> to <code>APP_SOURCES</code> in <code>CMakeLists.txt</code>.</li>
+      <li>Add a state to the <code>AppState</code> enum (e.g. <code>STATE_LED_DEMO</code>) and a row to the SMF state table with entry/run/exit handlers.</li>
+      <li>Add your subsystem pointer to the <code>AppMachine</code> struct.</li>
+      <li>Initialize it in <code>main()</code> before <code>app::run(machine)</code>.</li>
+      <li><strong>Register a watchdog channel</strong> and <code>feed()</code> it in your run handler so a bug resets the device instead of hanging it.</li>
+    </ol>
+    <pre><code><span class="k">const int</span> ch = core::watchdog::<span class="f">register_channel</span>(<span class="s">"led_demo"</span>, <span class="n">1000</span>);
+<span class="c">// ...in your run handler, periodically:</span>
+core::watchdog::<span class="f">feed</span>(ch);</code></pre>
+
+    <h2>Toward a stem player — the honest roadmap</h2>
+    <p>Going from "I can blink LEDs" to "I play my own stems" is the same path the unreleased custom firmwares took.
+      Expect it to take real time — emvee1968 spent about a week with Claude Code to get <em>basic</em> playback.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Milestone</th><th>What's involved</th></tr></thead>
+      <tbody>
+        <tr><td>1 · Read the eMMC</td><td>Wire up the present-but-unused <code>EmmcDriver</code> / <code>DiskManager</code>; read a sector; decode frames with <code>decode_te_frame_payload_i32</code>.</td></tr>
+        <tr><td>2 · Stream to I²S</td><td>Set up the I²S TX backend; feed <code>AudioEngine::render_block()</code> per DMA buffer; configure CS42L42 + TAS2505 formats.</td></tr>
+        <tr><td>3 · Mix + transport</td><td>Per-stem volume from faders, mute/solo from track buttons, play/stop transport. Add the <code>AUDIO_PLAYING</code> state.</td></tr>
+        <tr><td>4 · Effects</td><td>Instantiate <code>StemEffectRack</code> per stem; wire effect nodes between mixer and codec.</td></tr>
+        <tr><td>5 · Tape FF/RW</td><td>The frontier — block-skipping over the 0/2/1/3 interleave. Nobody has full parity yet; ~2× is realistic.</td></tr>
+        <tr><td>6 · Custom stems</td><td>Encode WAV → album image (per-sector trailer from the <a class="link" href="audio.html">audio page</a>) and upload over <code>0x39</code>.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="box note">
+      <div class="box-h">◆ Using an AI assistant on this? Good — but verify</div>
+      <p>Two of the existing custom firmwares were built with Claude Code. It's a legitimate path. But this device is a
+      hallucination magnet: an assistant will confidently produce a wrong audio layout, a fake opcode, or an invented
+      workflow step. Cross-check anything it tells you against the <a class="link" href="reference.html">cheat-sheet</a>
+      and the <a class="link" href="accuracy.html">don't-hallucinate list</a>, and prefer the bundled source over its
+      memory.</p>
+    </div>
+
+    <div class="pager">
+      <a href="internals.html"><span class="dir">← Prev</span><span class="ttl">11 · Player internals</span></a>
+      <a class="next" href="looper.html"><span class="dir">Next →</span><span class="ttl">13 · Case study: tape looper</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

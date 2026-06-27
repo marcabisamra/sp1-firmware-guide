@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bootloader &amp; flashing · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">03 · Flash path</div>
+    <h1>Bootloader &amp; flashing</h1>
+    <p class="lede">This is your no-soldering door into the device. Two buttons and a USB cable put the SP-1 into a
+      60-second window where it will accept firmware. Master this before you build anything — it's also your recovery
+      path when a bad build won't boot.</p>
+
+    <h2>The trigger</h2>
+    <div class="box gold">
+      <div class="box-h">▶ Enter the bootloader</div>
+      <ol style="margin-bottom:0">
+        <li>Make sure the SP-1 is <strong>off</strong> (or long-press <code>••</code> to turn it off).</li>
+        <li><strong>Hold Track&nbsp;1 + Track&nbsp;4</strong> while connecting USB-C.</li>
+        <li>Keep holding until the <strong>Track&nbsp;1 LED lights up</strong>.</li>
+        <li>Release all buttons.</li>
+        <li>The device is now a USB CDC ACM serial port, ready to flash.</li>
+      </ol>
+    </div>
+    <p>The power button is <strong>not</strong> part of the combo — an old post claimed a "step 4: power button" that
+      was later edited out. It's just the two track buttons plus USB-C. The device stays in bootloader mode for about
+      <strong>60 seconds</strong> of inactivity before rebooting into the app.</p>
+    <div class="box cite"><div class="box-h">✦ Sources</div><p>Trigger discovered by B_E_N <span class="src">Lines #556</span>. Verbatim steps from the solderless utility UI <span class="src">index.html lines 119–125</span>. The removed power-button step is logged in <span class="src">corrections.md</span>.</p></div>
+
+    <h2>What the bootloader looks like to your computer</h2>
+    <div class="kv">
+      <dt>USB VID</dt><dd><code>2367</code> — Teenage Engineering's registered vendor ID</dd>
+      <dt>USB PID</dt><dd><code>1701</code> — the factory bootloader</dd>
+      <dt>Manufacturer</dt><dd><code>teenage engineering</code></dd>
+      <dt>Product</dt><dd><code>stem player</code></dd>
+      <dt>Enumerates as</dt><dd>USB CDC ACM — <code>/dev/ttyACMx</code> (Linux), a COM port (Windows), <code>/dev/cu.usbmodem*</code> (macOS)</dd>
+    </div>
+    <div class="box note">
+      <div class="box-h">◆ Custom firmware uses different IDs</div>
+      <p>Once you flash <code>ericlewis/sp1-midi</code>, the device enumerates as <code>1209/0001</code> (a PID.codes
+      test pair), not <code>2367/1701</code>. A robust host tool should match <strong>both</strong> the factory
+      bootloader and your custom IDs. <span class="src">references/15-bootloader-protocol.md — empirical, Unit A, 2026-05-14</span></p>
+    </div>
+
+    <h2>Three ways to flash</h2>
+
+    <h3>1 · The web flasher (recommended)</h3>
+    <p>Since 2026-05-18, <code>solderless.engineering</code> exposes a dedicated <strong>firmware utility</strong> — a
+      browser-based flasher (Web Serial, Chromium-family browsers). <em>This is the first publicly-released
+      browser-based custom-firmware flasher for the SP-1.</em></p>
+    <div class="steps">
+      <div class="step"><h3>Open the launcher</h3><p>Visit the site in Chrome/Edge and click <strong>connect</strong>; select "stem player."</p></div>
+      <div class="step"><h3>Enter the bootloader</h3><p>Hold Track&nbsp;1 + Track&nbsp;4, plug in USB-C, wait for the Track&nbsp;1 LED, release.</p></div>
+      <div class="step"><h3>Drop your binary</h3><p>Switch to the firmware-utility tab, drag your <code>zephyr.bin</code>, click flash. No Python, no DFU tool.</p></div>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p>Local mirror at <span class="src">assets/solderless-2026-05-18/utility/</span>. The clean flash-only flow lives in <span class="src">utility/js/firmware.js</span>.</p></div>
+
+    <h3>2 · Your own client (when the web tool is offline)</h3>
+    <p>The flash protocol is fully documented — anyone can implement it. The site went offline for nine days in May
+      2026, so <strong>plan for it being unavailable</strong>. <code>theunflappable</code>'s <code>test_bootloader.py</code>
+      (Discord #firmware, 2026-05-08) is a Python starting point. The byte-level details are on the next page.
+      → <a class="link" href="protocol.html">The wire protocol</a></p>
+
+    <h3>3 · SWD (for serious development)</h3>
+    <p>If you solder SWD pads (there's no factory header), <code>ninja -C build flash</code> pushes the binary directly
+      and you get breakpoints. This is the only path that survives overwriting the bootloader. Most people skip it
+      until they're iterating hard.</p>
+
+    <h2>What the bootloader cannot do</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Capability</th><th>Supported?</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr><td>Write the app slot</td><td><span class="pill ok">yes</span></td><td>This is its whole job.</td></tr>
+        <tr><td>Read existing firmware</td><td><span class="pill no">no</span></td><td>No flash-read opcode. <em>"you cannot"</em> — ericlewis, Discord #firmware, 2026-05-08.</td></tr>
+        <tr><td>Read the eMMC</td><td><span class="pill no">no</span></td><td>Album writes are write-only; reading back needs running app firmware.</td></tr>
+        <tr><td>Run arbitrary code</td><td><span class="pill no">no</span></td><td>Strict, small command set.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="box danger">
+      <div class="box-h">▲ A bad firmware can brick the device</div>
+      <p>Your build can leave the device unusable if it doesn't bring up USB, doesn't honor the function-button
+      long-press for shutdown, or disables the audio system with no recovery state. <strong>Recovery:</strong> re-enter
+      Track&nbsp;1+4+USB-C from a cold start — the bootloader is intact <em>as long as you never wrote below
+      <code>0x20000</code></em>. tkt1000: <em>"If you load a bad firmware you can brick your device!"</em>
+      The solderless UI warns: <em>"the binary you upload must be compiled specifically for SP-1 or it might brick
+      your device!"</em></p>
+    </div>
+
+    <div class="box tip">
+      <div class="box-h">✓ Golden habit</div>
+      <p>Don't flash anything onto your only device "for fun." <code>sp1-midi</code> turns your stem player into a MIDI
+      controller and you can't undo it without re-flashing something. Develop against a unit you can afford to brick,
+      or be very sure of your recovery path.</p>
+    </div>
+
+    <div class="pager">
+      <a href="history.html"><span class="dir">← Prev</span><span class="ttl">02 · How it was cracked</span></a>
+      <a class="next" href="protocol.html"><span class="dir">Next →</span><span class="ttl">04 · The wire protocol</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

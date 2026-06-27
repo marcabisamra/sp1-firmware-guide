@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The wire protocol · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">04 · Protocol</div>
+    <h1>The wire protocol</h1>
+    <p class="lede">If you want to flash without the web tool — or build your own uploader — you need to speak the
+      bootloader's serial protocol. It's small: COBS-framed packets, a CRC-8 table, and a handful of opcodes. This is
+      the one area where wrong bytes have burned real AI implementations, so every value here is copied from the
+      solderless source.</p>
+
+    <div class="box cite"><div class="box-h">✦ Code of record</div><p><span class="src">assets/solderless-2026-05-12/js/protocol.js, storage.js, firmware.js</span> and the cleaner flash-only <span class="src">assets/solderless-2026-05-18/utility/js/firmware.js</span>. Reproduced in <span class="src">references/15-bootloader-protocol.md</span>.</p></div>
+
+    <h2>Packet framing</h2>
+    <p>Transport is <strong>USB CDC ACM at 115200 8N1</strong>. Every message, both directions, is a
+      <strong>COBS-encoded packet</strong> terminated by a single <code>0x00</code> byte. The decoded packet body is:</p>
+    <pre><code>+------+-----+-----+------+----------------+------+
+| 0x51 | seq | cmd | plen | payload (plen) | crc8 |
++------+-----+-----+------+----------------+------+
+   1     1     1     1         plen          1</code></pre>
+    <ul>
+      <li><code>0x51</code> (<code>'Q'</code>) — fixed start magic on <em>every</em> packet body.</li>
+      <li><code>seq</code> — host increments per command; device echoes it. Solderless starts at 1.</li>
+      <li><code>cmd</code> — one-byte opcode (palette below).</li>
+      <li><code>plen</code> — payload length.</li>
+      <li><code>crc8</code> — CRC-8 over <code>[0x51, seq, cmd, plen, payload…]</code> using the table below.</li>
+    </ul>
+    <div class="box warn">
+      <div class="box-h">✕ The magic byte is not the opcode</div>
+      <p><code>0x51</code> appears <em>both</em> as the framing magic (start of every body) <em>and</em> as the
+      "end-of-album-upload" opcode. Same byte, different roles. The opcode sits one byte further in, at the
+      <code>cmd</code> position. Don't confuse them.</p>
+    </div>
+
+    <h3>CRC-8 table (verbatim)</h3>
+    <p>Init value <code>0</code>; update step <code>crc = table[crc ^ next_byte]</code>.</p>
+    <pre><code>0xea,0xd4,0x96,0xa8,0x12,0x2c,0x6e,0x50,0x7f,0x41,0x03,0x3d,0x87,0xb9,0xfb,0xc5,
+0xa5,0x9b,0xd9,0xe7,0x5d,0x63,0x21,0x1f,0x30,0x0e,0x4c,0x72,0xc8,0xf6,0xb4,0x8a,
+0x74,0x4a,0x08,0x36,0x8c,0xb2,0xf0,0xce,0xe1,0xdf,0x9d,0xa3,0x19,0x27,0x65,0x5b,
+0x3b,0x05,0x47,0x79,0xc3,0xfd,0xbf,0x81,0xae,0x90,0xd2,0xec,0x56,0x68,0x2a,0x14,
+0xb3,0x8d,0xcf,0xf1,0x4b,0x75,0x37,0x09,0x26,0x18,0x5a,0x64,0xde,0xe0,0xa2,0x9c,
+0xfc,0xc2,0x80,0xbe,0x04,0x3a,0x78,0x46,0x69,0x57,0x15,0x2b,0x91,0xaf,0xed,0xd3,
+0x2d,0x13,0x51,0x6f,0xd5,0xeb,0xa9,0x97,0xb8,0x86,0xc4,0xfa,0x40,0x7e,0x3c,0x02,
+0x62,0x5c,0x1e,0x20,0x9a,0xa4,0xe6,0xd8,0xf7,0xc9,0x8b,0xb5,0x0f,0x31,0x73,0x4d,
+0x58,0x66,0x24,0x1a,0xa0,0x9e,0xdc,0xe2,0xcd,0xf3,0xb1,0x8f,0x35,0x0b,0x49,0x77,
+0x17,0x29,0x6b,0x55,0xef,0xd1,0x93,0xad,0x82,0xbc,0xfe,0xc0,0x7a,0x44,0x06,0x38,
+0xc6,0xf8,0xba,0x84,0x3e,0x00,0x42,0x7c,0x53,0x6d,0x2f,0x11,0xab,0x95,0xd7,0xe9,
+0x89,0xb7,0xf5,0xcb,0x71,0x4f,0x0d,0x33,0x1c,0x22,0x60,0x5e,0xe4,0xda,0x98,0xa6,
+0x01,0x3f,0x7d,0x43,0xf9,0xc7,0x85,0xbb,0x94,0xaa,0xe8,0xd6,0x6c,0x52,0x10,0x2e,
+0x4e,0x70,0x32,0x0c,0xb6,0x88,0xca,0xf4,0xdb,0xe5,0xa7,0x99,0x23,0x1d,0x5f,0x61,
+0x9f,0xa1,0xe3,0xdd,0x67,0x59,0x1b,0x25,0x0a,0x34,0x76,0x48,0xf2,0xcc,0x8e,0xb0,
+0xd0,0xee,0xac,0x92,0x28,0x16,0x54,0x6a,0x45,0x7b,0x39,0x07,0xbd,0x83,0xc1,0xff,</code></pre>
+
+    <h2>Command palette (the ones you need)</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Op</th><th>ASCII</th><th>Reply</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>0x52</code></td><td><code>R</code></td><td><code>0x53 S</code></td><td><strong>State query.</strong> Returns 5-byte state vector, or 4-byte LE32 page counter mid-flash.</td></tr>
+        <tr><td><code>0x46</code></td><td><code>F</code></td><td><code>0x47 G</code></td><td><strong>Format / erase app slot.</strong> ~5&nbsp;s. First step of a flash.</td></tr>
+        <tr><td><code>0x45</code></td><td><code>E</code></td><td>none</td><td><strong>Write firmware chunk.</strong> Payload = <code>[chunk_seq LE32 | flash_addr LE32 | data ≤240B]</code>.</td></tr>
+        <tr><td><code>0x48</code></td><td><code>H</code></td><td><code>0x49 I</code></td><td><strong>Commit / finalize firmware.</strong> Called twice at the end.</td></tr>
+        <tr><td><code>0x70</code></td><td><code>p</code></td><td><code>0x71 q</code></td><td><strong>Set mode</strong> (album upload). Payload <code>[1]</code>.</td></tr>
+        <tr><td><code>0x50</code></td><td><code>P</code></td><td>none</td><td><strong>Reboot.</strong> Re-enumerates USB.</td></tr>
+        <tr><td><code>0x37</code></td><td><code>7</code></td><td>none</td><td>Reset write counter / start album-upload session.</td></tr>
+        <tr><td><code>0x39</code></td><td><code>9</code></td><td>none</td><td>Write album chunk (136-byte payload, fire-and-forget).</td></tr>
+        <tr><td><code>0x43</code></td><td><code>C</code></td><td><code>0x44 D</code></td><td>Read write counter (verify chunks received).</td></tr>
+        <tr><td><code>0x66</code></td><td><code>f</code></td><td><code>0x67 g</code></td><td>Verify album → <code>[isValid, errCode]</code>.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>There are more (device ID <code>0x54</code>, battery <code>0x7A</code>, faders <code>0x64</code>, LEDs
+      <code>0x5A</code>…) — the full list is in <span class="src">references/15-bootloader-protocol.md</span>.</p>
+
+    <h2>The firmware-flash sequence</h2>
+    <pre><code><span class="c">// from firmware.js::flashFirmware</span>
+<span class="n">1.</span> <span class="o">0x52</span> (R)              <span class="c">→ expect 0x53 (S), any valid reply is fine</span>
+<span class="n">2.</span> <span class="o">0x46</span> (F)              <span class="c">→ expect 0x47 (G); 5s timeout (erases flash)</span>
+<span class="n">3.</span> for each 4096-byte page starting at FIRST_PAGE = 0x20:
+       for each chunk (≤ FW_CHUNK_SIZE = 240 bytes):
+         <span class="o">0x45</span> (E) [chunk_seq LE32 | flash_addr LE32 | data]   <span class="c">no reply</span>
+         sleep 5ms  <span class="c">(100ms at the start of each new page)</span>
+<span class="n">4.</span> <span class="o">0x48</span> (H) [last_page LE32]  <span class="c">→ expect 0x49 (I)</span>
+<span class="n">5.</span> <span class="o">0x48</span> (H) [counter LE32]    <span class="c">→ expect 0x49 (I)</span>
+<span class="n">6.</span> device reboots into new firmware</code></pre>
+
+    <h4>Flash layout constants</h4>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Constant</th><th>Value</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>FW_PAGE_SIZE</code></td><td><code>4096</code></td><td>nRF52840 page size</td></tr>
+        <tr><td><code>FW_CHUNK_SIZE</code></td><td><code>240</code></td><td>firmware bytes per <code>0x45</code> packet</td></tr>
+        <tr><td><code>FLASH_START</code></td><td><code>0x20000</code></td><td>first valid app address (128&nbsp;KB in)</td></tr>
+        <tr><td><code>FLASH_END</code></td><td><code>0xFF000</code></td><td>end of app slot</td></tr>
+        <tr><td><code>FIRST_PAGE</code> / <code>LAST_PAGE</code></td><td><code>0x20</code> / <code>0xFE</code></td><td>page indices for the app slot</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="box tip">
+      <div class="box-h">✓ Flash mode is not a separate state</div>
+      <p>The firmware-flash flow does <strong>not</strong> require a mode switch first. Send <code>0x52</code> once,
+      accept whatever <code>0x53</code> reply comes back (4-byte page counter <em>or</em> 5-byte boot-mode
+      <code>"00100"</code>), then go straight to <code>0x46</code>. The <code>0x70</code>/<code>0x50</code>
+      "set-upload-mode + reboot" dance is only for <em>album</em> uploads.</p>
+    </div>
+
+    <h2>The trap that has actually bitten people</h2>
+    <div class="box danger">
+      <div class="box-h">▲ The state-query reply is NOT ASCII</div>
+      <p>The <code>0x53</code> 5-byte payload is <strong>raw integer bytes</strong> (each 0–9), not ASCII characters.
+      Bytes <code>[0,0,1,0,0]</code> mean boot mode; <code>[1,0,5,1,0]</code> mean upload mode. Solderless stringifies
+      with <code>Array.from(payload).join('')</code> — exploiting that <code>(1).toString() === "1"</code> — to get
+      <code>"00100"</code> / <code>"10510"</code>.</p>
+      <p style="margin-bottom:0">Using <code>String.fromCharCode(b)</code> produces five control characters instead and
+      the boot-mode check silently fails against real hardware. <strong>This exact bug burned the dumper project on
+      2026-05-14.</strong> Either match the reference (<code>Array.from(payload).join('')</code>) or compare the byte
+      array directly.</p>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ Other ruled-out claims — do not assert these</div>
+      <ul style="margin-bottom:0">
+        <li><code>0x52</code> is <strong>not</strong> a "bootloader version check" — it's a state query, no version anywhere.</li>
+        <li>The <code>0x39</code> album packet has <strong>no</strong> magic / sub-command header. It is exactly
+          <code>chunk_n (LE32) | emmc_byte_offset (LE32) | 128 bytes</code> = 136 bytes.</li>
+        <li>Field two is an <strong>absolute byte offset</strong>, not a "sector address."</li>
+        <li>The host does <strong>not</strong> set <code>GPREGRET = 0x1A96</code> — that was a paraphrase; it's not in any host implementation.</li>
+        <li><code>0x39</code> chunks are <strong>fire-and-forget</strong>, not ACK'd one by one. A dropped chunk silently corrupts the upload.</li>
+      </ul>
+    </div>
+
+    <h2>Upload speeds — set expectations</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Speed</th><th>Per ~311&nbsp;MB album</th></tr></thead>
+      <tbody>
+        <tr><td>moecal1947 Python (control transfers)</td><td>~0.75&nbsp;KB/s</td><td>~4.5 days</td></tr>
+        <tr><td>solderless web (CDC, fire-and-forget)</td><td>~10&nbsp;KB/s</td><td>~9 hours — <em>the public best</em></td></tr>
+        <tr><td>ericlewis theoretical max (unbuilt USB bulk + CMD25)</td><td>~4&nbsp;MB/s</td><td>minutes</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>TimK's own help text: <em>"1 minute of audio takes about 10 minutes to transfer."</em> Album upload is slow
+      today; that's a known frontier, not your bug. <span class="src">references/16-usb-upload-protocol.md</span></p>
+
+    <div class="pager">
+      <a href="bootloader.html"><span class="dir">← Prev</span><span class="ttl">03 · Bootloader &amp; flashing</span></a>
+      <a class="next" href="build.html"><span class="dir">Next →</span><span class="ttl">05 · Build environment</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

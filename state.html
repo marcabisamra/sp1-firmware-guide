@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who built what · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">14 · Landscape</div>
+    <h1>Who has built what</h1>
+    <p class="lede">Knowing which firmwares exist, what they actually do, and whether you can have them keeps you from
+      chasing a release that isn't out — or assuming a feature works when it's still in someone's private branch. State
+      as of the 2026-05-18 snapshot.</p>
+
+    <div class="box note">
+      <div class="box-h">◆ Snapshot caveat</div>
+      <p>Several of these were "unreleased, coming soon" at synthesis time. Any of them may have shipped since. For
+      current status, ask in the Discord rather than trusting this table.</p>
+    </div>
+
+    <div class="box gold">
+      <div class="box-h">▲ Update (June 2026): public audio firmware now exists</div>
+      <p>The skill's 2026-05-18 snapshot said no public, buildable, audio-capable firmware existed. That is
+      <strong>no longer true</strong>: <code>chattock/sp1-tape-looper</code> is a complete MIT-licensed four-track looper
+      with source, two prebuilt <code>.bin</code>s, and a loop-transfer web tool. It postdates the snapshot — read it as
+      a worked example in the <a class="link" href="looper.html">case study</a>.</p>
+    </div>
+
+    <h2>The firmwares</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Firmware</th><th>Does</th><th>Public?</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Stock TE firmware</strong></td><td>Plays original Donda / JIK stems, full effects, tape FF/RW</td><td><span class="pill no">private</span> not redistributed (TE IP)</td></tr>
+        <tr><td><strong><code>ericlewis/sp1-midi</code></strong></td><td>USB MIDI 2.0 controller — <em>no audio</em></td><td><span class="pill ok">public</span> on GitHub</td></tr>
+        <tr><td><strong><code>chattock/sp1-tape-looper</code></strong></td><td>4-track audio looper: UAC2 USB audio in, real-time flash streaming, sync-jack MIDI <span class="src">June 2026, post-snapshot</span></td><td><span class="pill ok">public</span> + source + .bin</td></tr>
+        <tr><td><strong>TimK's firmware</strong></td><td>"Fully functional"; up to 2.0× FF; details not public</td><td><span class="pill no">private</span></td></tr>
+        <tr><td><strong>emvee1968's firmware</strong></td><td>Basic playback + gate effect + Bluetooth pairing</td><td><span class="pill wip">unreleased</span> awaiting more units</td></tr>
+        <tr><td><strong>virtualflannel_46386's OS</strong></td><td>Full FX page: beat repeat, bit crusher, send delay, filter, pitch ±12¢, mixer mute/solo</td><td><span class="pill wip">unreleased</span> awaiting solderless</td></tr>
+        <tr><td><code>audiothingies</code>/<code>storagethingies</code></td><td>Clean-room reference: audio engine + storage</td><td><span class="pill ok">bundled</span> in the skill</td></tr>
+        <tr><td>zee_33's LED-dump firmware</td><td>Exfiltrates flash bytes via LEDs</td><td><span class="pill no">private</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>What you can build on today</h2>
+    <p>Two public starting points now, for two different goals:</p>
+    <ul>
+      <li><strong><code>ericlewis/sp1-midi</code></strong> — the clean BSP foundation. A MIDI controller with working
+        drivers for every peripheral and a tidy state-machine skeleton. Best when you want to start minimal and add the
+        <code>audiothingies</code>/<code>storagethingies</code> reference engine yourself.</li>
+      <li><strong><code>chattock/sp1-tape-looper</code></strong> — a complete, working audio firmware. Best when you want
+        to see a real, end-to-end answer to "how do I get audio out of this thing": codec/I²S bring-up, a single-owner
+        flash streamer, and a purpose-built on-disk layout. Read it as the <a class="link" href="looper.html">case study</a>.</li>
+    </ul>
+    <p>Everything else with audio is still either TE's private IP or someone's unreleased branch.</p>
+
+    <h2>What two recent authors learned (so you don't relearn it)</h2>
+
+    <h3>emvee1968 — basic playback in ~a week with Claude Code</h3>
+    <ul>
+      <li><strong>Works:</strong> custom-stem playback, a gate effect, Bluetooth pairing (vol+/vol− combo), half-speed tape via function+play.</li>
+      <li><strong>Doesn't:</strong> no power-off (had to disconnect the battery to re-enter the bootloader); no FF/RW (gave up after hours); only one of the stock effects.</li>
+      <li><strong>Lesson:</strong> the power-off and FF/RW problems are real and non-obvious. Plan a clean shutdown path early. <span class="src">Discord #firmware, 2026-05-08</span></li>
+    </ul>
+
+    <h3>virtualflannel_46386 — most ambitious unreleased OS</h3>
+    <ul>
+      <li><strong>Goes beyond stock:</strong> beat repeat and bit crusher aren't in the original TE effect rack — these are new modules.</li>
+      <li><strong>Status:</strong> waiting for the web flasher to come back before releasing firmware + docs. <span class="src">Discord #general, 2026-05-11</span></li>
+    </ul>
+
+    <h2>Open frontiers — where contribution is welcome</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Gap</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Public BSP with audio playback</td><td>In development by ericlewis (the "proper bsp")</td></tr>
+        <tr><td>Public firmware with Bluetooth</td><td>emvee1968 has it working, unreleased</td></tr>
+        <tr><td>Full stock-effect parity</td><td>Nobody has it yet</td></tr>
+        <tr><td>Fast album upload (~MB/s)</td><td>Needs USB bulk + CMD25 firmware; unbuilt</td></tr>
+        <tr><td>Full-speed FF/RW with block-skipping</td><td>Aspirational; ~2× is the current ceiling</td></tr>
+        <tr><td>WAV→album.sp1 prep tool</td><td>emvee1968 has internal code; not released</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">references/20-custom-firmware-state.md</span> and <span class="src">known-unknowns.md</span>.</p></div>
+
+    <div class="pager">
+      <a href="looper.html"><span class="dir">← Prev</span><span class="ttl">13 · Case study: tape looper</span></a>
+      <a class="next" href="accuracy.html"><span class="dir">Next →</span><span class="ttl">15 · Don't hallucinate</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

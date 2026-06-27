@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build environment · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">05 · Toolchain</div>
+    <h1>Zephyr build environment</h1>
+    <p class="lede">Custom SP-1 firmware is a <strong>Zephyr RTOS</strong> application. Get Zephyr + its SDK installed,
+      point a build at the <code>stem_player</code> board, and one command produces a flashable
+      <code>zephyr.bin</code>. The <code>sp1-midi</code> BSP supplies the board definition so you don't start from
+      scratch.</p>
+    <div class="box cite"><div class="box-h">✦ Code of record</div><p><span class="src">assets/sp1-midi-2026-05-13/{README.md, CMakeLists.txt, prj.conf, app.overlay}</span>, synthesized in <span class="src">references/18-zephyr-build-environment.md</span>.</p></div>
+
+    <h2>Prerequisites</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Version</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Zephyr base (RTOS source)</td><td>recent enough for <code>CONFIG_USB_DEVICE_STACK_NEXT</code></td><td>The next-gen USB stack is <strong>required</strong>. Install via <code>west init</code> + <code>west update</code>.</td></tr>
+        <tr><td>Zephyr SDK</td><td>matching your Zephyr base</td><td>Provides the ARM cross-compiler.</td></tr>
+        <tr><td>CMake</td><td>3.20+</td><td>System package manager.</td></tr>
+        <tr><td>Ninja</td><td>any recent</td><td>System package manager.</td></tr>
+        <tr><td>Python venv</td><td>—</td><td>A <code>zephyr-venv</code> for <code>west</code> and helper scripts.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Follow Zephyr's official "Getting Started" guide for the base install — that part isn't SP-1-specific. Come back
+      here for the SP-1 board target.</p>
+
+    <h2>The build command that matters</h2>
+    <p>From the <code>sp1-midi</code> repo root:</p>
+    <pre><code><span class="k">PATH</span>=<span class="s">"/path/to/zephyr-venv/bin:$PATH"</span> \
+<span class="k">ZEPHYR_BASE</span>=/path/to/zephyrproject/zephyr \
+<span class="k">ZEPHYR_SDK_INSTALL_DIR</span>=/path/to/zephyr-sdk \
+cmake -B build -GNinja <span class="o">-DBOARD=stem_player</span> -DSNIPPET=cdc-acm-console
+
+ninja -C build
+ninja -C build flash   <span class="c"># SWD only — see below</span></code></pre>
+    <ul>
+      <li><code>-DBOARD=stem_player</code> selects the board definition at
+        <code>boards/teenageengineering/stem_player/</code> — the device tree, pinctrl, and Kconfig defaults that
+        describe the SP-1's hardware.</li>
+      <li><code>-DSNIPPET=cdc-acm-console</code> adds a USB serial shell so you get log output during runtime
+        (<code>/dev/ttyACM0</code>, prompt <code>stem&gt;</code>). <strong>Strongly recommended</strong> for development —
+        without it you're flying blind.</li>
+    </ul>
+
+    <div class="box tip">
+      <div class="box-h">✓ No SWD? No problem (just slower)</div>
+      <p><code>ninja -C build flash</code> needs an SWD probe. If you don't have one, just run
+      <code>ninja -C build</code> to produce <strong><code>build/zephyr/zephyr.bin</code></strong>, then flash that file
+      via the solderless web tool or your own bootloader client. Your loop becomes: edit → build → flash via bootloader
+      → watch CDC logs → repeat. Slower than breakpoints, but it works.</p>
+    </div>
+
+    <h2>What the BSP turns on (prj.conf highlights)</h2>
+    <p>You inherit a config that already enables the right peripherals. The notable ones for an audio project:</p>
+    <pre><code><span class="c"># C++17 with full libc++</span>
+CONFIG_CPP=y
+CONFIG_STD_CPP17=y
+
+<span class="c"># Peripherals you'll need for audio</span>
+CONFIG_I2C=y                     <span class="c"># codec control</span>
+CONFIG_I2S=y                     <span class="c"># audio data bus</span>
+CONFIG_I2S_NRFX_TX_BLOCK_COUNT=8 <span class="c"># 8 DMA blocks, deep buffering</span>
+CONFIG_AUDIO=y
+CONFIG_AUDIO_CODEC=y
+CONFIG_DISK_ACCESS=y             <span class="c"># Zephyr disk subsystem for eMMC</span>
+
+<span class="c"># Input subsystem (faders + buttons)</span>
+CONFIG_INPUT=y
+CONFIG_INPUT_ADC_KEYS=y          <span class="c"># analog button ladders</span>
+CONFIG_INPUT_LONGPRESS=y         <span class="c"># 3s long-press → power</span>
+
+<span class="c"># USB: composite MIDI 2.0 + CDC ACM</span>
+CONFIG_USB_DEVICE_STACK_NEXT=y   <span class="c"># required</span>
+CONFIG_USBD_MIDI2_CLASS=y
+CONFIG_USBD_CDC_ACM_CLASS=y
+
+<span class="c"># Performance — keep these for real-time audio</span>
+CONFIG_SPEED_OPTIMIZATIONS=y     <span class="c"># -O2</span>
+CONFIG_NRF_ENABLE_ICACHE=y
+CONFIG_FPU=y
+CONFIG_FPU_SHARING=y             <span class="c"># FPU usable across threads</span></code></pre>
+
+    <h2>Memory budget — you have lots of room</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Resource</th><th>Bare BSP</th><th>Full TE firmware (for scale)</th></tr></thead>
+      <tbody>
+        <tr><td>Flash</td><td>~168&nbsp;KB (19% of 892&nbsp;KB slot)</td><td>~264&nbsp;KB</td></tr>
+        <tr><td>RAM</td><td>~43&nbsp;KB (17% of 256&nbsp;KB)</td><td>~219&nbsp;KB (86%)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The bare MIDI BSP leaves ~720&nbsp;KB of flash free. RAM is the tighter constraint once you add audio — the TE
+      firmware spends most of its RAM on eMMC prefetch slots (~80&nbsp;KB) and per-stem mixer + delay buffers.</p>
+
+    <h2>Common build issues</h2>
+    <div class="kv">
+      <dt>BOARD not found</dt><dd>Run cmake from the repo root where <code>boards/</code> lives.</dd>
+      <dt>STACK_NEXT missing</dt><dd>Your Zephyr base is too old; update it.</dd>
+      <dt>Enumeration fails</dt><dd>Host cached the old USB device — unplug/replug; on Linux reload udev rules.</dd>
+      <dt>Boots, no audio</dt><dd>Expected. The BSP is a MIDI controller; audio is something you add. → <a class="link" href="audio.html">Audio engine</a></dd>
+    </div>
+
+    <div class="pager">
+      <a href="protocol.html"><span class="dir">← Prev</span><span class="ttl">04 · The wire protocol</span></a>
+      <a class="next" href="bsp.html"><span class="dir">Next →</span><span class="ttl">06 · The sp1-midi BSP</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

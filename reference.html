@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sources &amp; cheat-sheet · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">16 · Lookup</div>
+    <h1>Sources &amp; cheat-sheet</h1>
+    <p class="lede">The numbers you'll reach for while coding, plus where everything comes from. All values trace to the
+      bundled skill assets or named primary sources.</p>
+
+    <h2>Pin map — GPIO control lines</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Pin</th><th>Function</th><th>Active</th></tr></thead>
+      <tbody>
+        <tr><td><code>P0.09</code></td><td>TAS2505 reset (NFC1 as GPIO)</td><td>low</td></tr>
+        <tr><td><code>P0.10</code></td><td>CYBT Bluetooth reset (NFC2 as GPIO)</td><td>low</td></tr>
+        <tr><td><code>P0.13</code></td><td>3.072&nbsp;MHz audio osc enable (held high by GPIO hog)</td><td>high</td></tr>
+        <tr><td><code>P0.14</code></td><td>eMMC VccQ enable</td><td>high</td></tr>
+        <tr><td><code>P0.15</code></td><td>CS42L42 reset</td><td>low</td></tr>
+        <tr><td><code>P0.27</code></td><td>Function button (discrete GPIO, pull-up)</td><td>low</td></tr>
+        <tr><td><code>P1.08</code></td><td>eMMC reset</td><td>low</td></tr>
+        <tr><td><code>P1.10</code></td><td>Button-common rail (powers the ladders)</td><td>high</td></tr>
+        <tr><td><code>P1.00</code></td><td>BQ24232 ISET override <span class="src">DTS + pins.h agree; README's P0.19 is the error</span></td><td>low</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box note"><div class="box-h">◆ Note</div><p>The DTS sets <code>nfct-pins-as-gpios;</code> at the root to reclaim P0.09 / P0.10 from the NFC peripheral. Without it, the codec/BT resets can't be driven.</p></div>
+
+    <h3>Sync-jack pins <span class="pill wip">unconfirmed</span></h3>
+    <p>The skill corpus lists the second-jack / MIDI GPIOs as a <strong>known-unknown</strong> — not in the published
+      pinout. The <a class="link" href="looper.html">tape-looper firmware</a> (June 2026) drives them, citing "TimK's
+      sync-jack schematic." Recorded here as a <strong>candidate resolution to verify against TimK</strong>, not as
+      established fact:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Pin</th><th>Function</th><th>Signal</th></tr></thead>
+      <tbody>
+        <tr><td><code>P0.23</code></td><td>MIDI out (BC807 PNP base → SYNC_RING; PNP inverts)</td><td>31250-baud, 24-PPQN clock + Start/Stop</td></tr>
+        <tr><td><code>P0.20</code></td><td>Pocket-Operator sync (PO_A → SYNC_TIP)</td><td>~5&nbsp;ms pulse, 2 PPQN</td></tr>
+        <tr><td><code>P0.17</code></td><td>Pocket-Operator sync (PO_B → SYNC_TIP, paralleled)</td><td>as above</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box warn"><div class="box-h">✕ Don't restate as fact yet</div><p>This contradicts the earlier "MIDI sync rides the TRS jack by a path not in the published pinout" status. Both the looper's <code>app.overlay</code> (which avoids P1.04 as the BT UART) and its MIDI code are one author's reading. Confirm with TimK before treating <code>P0.23/P0.20/P0.17</code> as canonical.</p></div>
+
+    <h2>ADC channel map (SAADC)</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Ch</th><th>AIN / GPIO</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>AIN0 / P0.02</td><td>Track + Play button ladder (8 thresholds — enables T1+T4 combo)</td></tr>
+        <tr><td>1</td><td>AIN1 / P0.03</td><td>Volume / transport rocker ladder (rwd, vol−, fwd, vol+)</td></tr>
+        <tr><td>2</td><td>AIN2 / P0.04</td><td>Fader 3</td></tr>
+        <tr><td>3</td><td>AIN3 / P0.05</td><td>Fader 1</td></tr>
+        <tr><td>4</td><td>AIN4 / P0.28</td><td>Battery voltage (divider)</td></tr>
+        <tr><td>6</td><td>AIN6 / P0.30</td><td>Fader 2</td></tr>
+        <tr><td>7</td><td>AIN7 / P0.31</td><td>Fader 4</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Gain 1/4, reference VDD/4, 12-bit, 3&nbsp;µs acquisition; 0…4080&nbsp;mV range. Channel 5 unused.</p>
+
+    <h2>LED map</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Group</th><th>PWM</th><th>Pins</th></tr></thead>
+      <tbody>
+        <tr><td>Track LEDs 1–4</td><td>PWM2</td><td>P0.29, P0.26, P1.15, P1.14</td></tr>
+        <tr><td>Play LEDs 1–4</td><td>PWM3</td><td>P0.01, P1.12, P0.00, P1.13</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>Flash &amp; protocol constants</h2>
+    <div class="kv">
+      <dt>App slot start</dt><dd><code>FLASH_START = 0x20000</code> (page <code>0x20</code>)</dd>
+      <dt>App slot end</dt><dd><code>FLASH_END = 0xFF000</code> (page <code>0xFE</code>)</dd>
+      <dt>App slot size</dt><dd>892&nbsp;KB (223 pages × 4096&nbsp;B)</dd>
+      <dt>Page size</dt><dd>4096&nbsp;B</dd>
+      <dt>FW chunk size</dt><dd>240&nbsp;B per <code>0x45</code> packet</dd>
+      <dt>Album chunk</dt><dd>136&nbsp;B payload (<code>chunk_n</code> LE32 + <code>byte_offset</code> LE32 + 128&nbsp;B)</dd>
+      <dt>Baud</dt><dd>115200 8N1, USB CDC ACM</dd>
+      <dt>Bootloader IDs</dt><dd>VID <code>2367</code> / PID <code>1701</code></dd>
+      <dt>sp1-midi IDs</dt><dd>VID <code>1209</code> / PID <code>0001</code></dd>
+    </div>
+
+    <h2>Audio format constants</h2>
+    <div class="kv">
+      <dt>Sample rate</dt><dd>48&nbsp;kHz, 24-bit signed</dd>
+      <dt>Stems / channels</dt><dd>4 stems × 2 ch = 8 channels/frame</dd>
+      <dt>Frame size</dt><dd>24 B (6 B/stem)</dd>
+      <dt>Stem byte order</dt><dd><code>L_mid, L_msb, R_msb, L_lsb, R_lsb, R_mid</code></dd>
+      <dt>Frames/sector</dt><dd>340 → 8160 audio bytes</dd>
+      <dt>Sector size</dt><dd>8192 B (16 × 512-B blocks)</dd>
+      <dt>Block order</dt><dd>physical 0 / 2 / 1 / 3 (enables tape FF/RW)</dd>
+      <dt>eMMC clock</dt><dd>32&nbsp;MHz, 1-bit mode</dd>
+      <dt>Tempo field</dt><dd><code>uint16</code> LE @ 2042 = <code>(48000·60)/(24·bpm)</code></dd>
+    </div>
+
+    <h2>Where everything lives (bundled assets)</h2>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Asset</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td><code>sp1-midi-2026-05-13/</code></td><td>ericlewis's public Zephyr BSP (MIT). Your starting point.</td></tr>
+        <tr><td><code>audiothingies-2026-05-09/</code></td><td>ericlewis's C++17 audio-engine reference (mixer, effects, varispeed, PcmPacking, I²S backend).</td></tr>
+        <tr><td><code>storagethingies-2026-05-09/</code></td><td>ericlewis's eMMC + DiskManager + frame decoder reference.</td></tr>
+        <tr><td><code>SP-1-dev-2026-05-13/</code></td><td>TimK's docs repo (MIT): <code>stemplayer_pins.h</code> + 14 wiki pages.</td></tr>
+        <tr><td><code>solderless-2026-05-18/</code></td><td>Current web tool mirror (stem loader, firmware utility, device info, spoom1).</td></tr>
+        <tr><td><code>solderless-2026-05-12/</code></td><td>Earlier static snapshot, preserved for citation stability.</td></tr>
+        <tr><td><code>lines-thread-archive/</code></td><td>Agent-friendly subset of the 846-post Lines mirror.</td></tr>
+        <tr><td>TE manuals (PDF/DOCX)</td><td>Official Teenage Engineering user guides.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>Primary sources &amp; repos</h2>
+    <ul>
+      <li><code>github.com/ericlewis/sp1-midi</code> — public Zephyr BSP (MIDI controller)</li>
+      <li><code>github.com/chattock/sp1-tape-looper</code> — public audio looper firmware (June 2026) + loop-transfer web tool</li>
+      <li><code>github.com/timknapen/SP-1-dev</code> — TimK's docs + pin header + wiki</li>
+      <li><code>github.com/resinbeard/beaglebone-black-glitcher</code> — murray's APPROTECT glitch rig</li>
+      <li><code>solderless.engineering</code> — web flasher + stem loader</li>
+      <li><code>github.com/dot-Justin/TE-SP-1-lines-thread-archive</code> — full Lines forum mirror</li>
+      <li>The community Discord — current state of everything (linked from the closed Lines thread)</li>
+    </ul>
+
+    <div class="box gold">
+      <div class="box-h">▲ Reminder</div>
+      <p>This guide is a <strong>2026-05-18 snapshot</strong>. Unreleased firmwares, web-tool changes, and new
+      corrections may exist. Cite primary sources, name the firmware you mean, keep TimK and ericlewis distinct, and
+      when unsure — verify in the Discord rather than guessing. → <a class="link" href="accuracy.html">Don't hallucinate</a></p>
+    </div>
+
+    <div class="pager">
+      <a href="accuracy.html"><span class="dir">← Prev</span><span class="ttl">15 · Don't hallucinate</span></a>
+      <a class="next" href="index.html"><span class="dir">Back to →</span><span class="ttl">00 · Introduction</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

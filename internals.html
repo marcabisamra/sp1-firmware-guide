@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player internals · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">11 · Internals</div>
+    <h1>Player internals</h1>
+    <p class="lede">The two systems that make a real player: getting audio off a slow, stalling flash chip in real time,
+      and the DSP effect rack that runs on it. This is reference-grade detail drawn from the clean-room
+      <code>storagethingies</code> / <code>audiothingies</code> code — what you'd integrate to go past "blink an LED."</p>
+
+    <h2>The eMMC, and how the nRF talks to it</h2>
+    <div class="kv">
+      <dt>Chip</dt><dd>Toshiba THGBMNG5D1LBAIL, 4&nbsp;GB, eMMC 5.0</dd>
+      <dt>Bus mode</dt><dd><strong>1-bit (DAT0 only)</strong> — multi-bit not used</dd>
+      <dt>Clock</dt><dd><strong>32&nbsp;MHz</strong>; High-Speed mode not enabled. Don't claim faster.</dd>
+      <dt>Encryption</dt><dd>None — "not encrypted, just formatted strangely"</dd>
+    </div>
+    <p>The driver is a <strong>hybrid GPIO + SPIM3</strong> design — bit-bang the command line, then let the SPI engine
+      clock the data:</p>
+    <pre><code>P0.06 CLK   <span class="c">— GPIO during CMD phase; SPIM3 SCK during data reads</span>
+P0.07 DAT0  <span class="c">— GPIO during CMD phase; SPIM3 MISO during data reads</span>
+P0.08 CMD   <span class="c">— GPIO bit-bang always (command line + CRC7)</span>
+P0.14 VCCQ  <span class="c">— GPIO, enables the eMMC I/O voltage rail</span>
+P1.08 RST   <span class="c">— GPIO, active-low reset</span></code></pre>
+    <p>Bring-up is an 11-step state machine (Zephyr SMF): <code>POWER_ON → CMD0 → CMD1 poll → CMD2 → CMD3 → CMD9 →
+      CMD7 → CMD8 → CMD16 → VERIFY → SETUP_ASYNC</code>. Every block read is CRC-checked with retry.
+      <span class="src">references/08-emmc-storage.md; assets/storagethingies-2026-05-09/EmmcDriver.cpp</span></p>
+    <div class="box note">
+      <div class="box-h">◆ A second data point from the looper</div>
+      <p>The <a class="link" href="looper.html">tape looper</a> drives the same chip through the SPI engine at
+      <strong>16&nbsp;MHz</strong> (~1333 blocks/s sustained), aligning write bursts to the 8&nbsp;KB internal page. Same
+      chip, lower clock than the skill's 32&nbsp;MHz figure — log it as a real alternative rather than averaging the two.</p>
+    </div>
+
+    <h2>Sector layout &amp; the tape trick</h2>
+    <p>The album is stored in <strong>8192-byte logical sectors</strong>, each 16 native 512-byte eMMC blocks. A sector
+      holds 340 audio frames (340 × 24 = 8160 bytes) plus a small side-data trailer. The four TE-blocks inside a sector
+      are written in <strong>physical order 0 / 2 / 1 / 3</strong>:</p>
+    <figure class="fig">
+      <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="eMMC sector block interleave">
+        <text class="sv-lbl" x="20" y="28">one 8192-byte sector = 16 × 512-byte eMMC blocks</text>
+        <!-- four TE blocks shown in physical order -->
+        <g>
+          <rect class="sv-accent" x="20"  y="44" width="160" height="50" rx="6"/>
+          <text class="sv-t sv-accent-t" x="100" y="68" text-anchor="middle">block 0</text>
+          <text class="sv-lbl" x="100" y="84" text-anchor="middle">+ trailer</text>
+          <rect class="sv-box" x="190" y="44" width="160" height="50" rx="6"/>
+          <text class="sv-t" x="270" y="74" text-anchor="middle">block 2</text>
+          <rect class="sv-box" x="360" y="44" width="160" height="50" rx="6"/>
+          <text class="sv-t" x="440" y="74" text-anchor="middle">block 1</text>
+          <rect class="sv-box" x="530" y="44" width="160" height="50" rx="6"/>
+          <text class="sv-t" x="610" y="74" text-anchor="middle">block 3</text>
+        </g>
+        <text class="sv-mono" x="20" y="124">physical order on disk: 0 · 2 · 1 · 3</text>
+        <text class="sv-lbl" x="430" y="124">at speed, read fewer blocks per sector → tape FF/RW</text>
+      </svg>
+      <figcaption>The 0/2/1/3 interleave lets the firmware read less data per sector at high transport speeds.</figcaption>
+    </figure>
+    <p>That ordering is what enables tape-style fast-forward/rewind: at speed, the firmware reads <em>fewer</em> blocks
+      per sector. Measured FF tops out around <strong>2.0–2.5×</strong> before you have to start jumping whole eMMC
+      blocks — a frontier no public firmware has fully solved (emvee1968 gave up on it; the looper does varispeed
+      instead). <span class="src">references/11-block-interleaving-tape-fx.md</span></p>
+
+    <h2>The streaming model — why audio survives a stalling flash</h2>
+    <p>The flash randomly stalls ~150&nbsp;ms for its own housekeeping. You hide that with read-ahead: one thread owns the
+      flash and keeps each track's RAM ring filled <em>ahead</em> of the playhead, so the audio thread only ever reads RAM.</p>
+    <figure class="fig">
+      <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="streamer read-ahead model">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--orange)"/>
+          </marker>
+        </defs>
+        <rect class="sv-box" x="20" y="30" width="150" height="50" rx="8"/>
+        <text class="sv-t" x="95" y="54" text-anchor="middle">eMMC flash</text>
+        <text class="sv-lbl" x="95" y="70" text-anchor="middle">stalls ~150 ms</text>
+        <rect class="sv-accent" x="250" y="30" width="220" height="50" rx="8"/>
+        <text class="sv-t" x="360" y="54" text-anchor="middle">streamer thread</text>
+        <text class="sv-lbl" x="360" y="70" text-anchor="middle">sole flash owner</text>
+        <!-- ring -->
+        <rect class="sv-blue" x="250" y="110" width="220" height="44" rx="8"/>
+        <text class="sv-t" x="360" y="130" text-anchor="middle">per-track RAM ring</text>
+        <text class="sv-lbl" x="360" y="146" text-anchor="middle">~341 ms read-ahead</text>
+        <rect class="sv-box" x="550" y="110" width="150" height="44" rx="8"/>
+        <text class="sv-t" x="625" y="130" text-anchor="middle">audio thread</text>
+        <text class="sv-lbl" x="625" y="146" text-anchor="middle">RAM only</text>
+        <path class="sv-flow" d="M170,55 L250,55"/>
+        <path class="sv-flow" d="M360,80 L360,110"/>
+        <path class="sv-flow" d="M470,132 L550,132"/>
+        <text class="sv-lbl" x="185" y="46">blocks</text>
+        <text class="sv-lbl" x="478" y="124">samples</text>
+      </svg>
+      <figcaption>One flash owner fills a read-ahead ring; the audio engine drains RAM and never blocks on I/O.</figcaption>
+    </figure>
+    <p>This is the architecture both the stock engine and the looper use, and the lesson generalises: <strong>exactly one
+      thread does blocking flash I/O; the real-time audio path only touches RAM.</strong> The stock firmware's RAM budget
+      is dominated by these prefetch slots (~10 × 8&nbsp;KB) plus the mixer and delay buffers.</p>
+
+    <h2>The DSP effect rack</h2>
+    <p>Stock firmware exposes <strong>four effect types, each with four variations</strong>. Two hard constraints shape
+      the design: <strong>only one stem can have an active effect at a time</strong>, and activation/deactivation
+      <strong>crossfades over one audio block</strong> to avoid pops.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Effect</th><th>What it is</th><th>Variations differ by</th></tr></thead>
+      <tbody>
+        <tr><td><strong>FILTER</strong></td><td>Stereo biquad lowpass (Butterworth)</td><td>0–1 static; 2–3 LFO-swept cutoff (0.18&nbsp;Hz / 0.45&nbsp;Hz)</td></tr>
+        <tr><td><strong>DISTORTION</strong></td><td>×16 pre-gain → hard clip → <code>y = x − 0.5·x³</code> waveshape → post-LPF</td><td>tone cutoff: 8000 / 6000 / 4300 / 3200&nbsp;Hz</td></tr>
+        <tr><td><strong>GATE</strong></td><td>Smooth volume ramp (not a threshold gate)</td><td>target gain from <code>kGateLevels[0..3]</code></td></tr>
+        <tr><td><strong>CHORUS_DELAY</strong></td><td>Split: chorus/flanger (var 0–1) or echo (var 2–3)</td><td>modulation depth / delay profile</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box tip">
+      <div class="box-h">✓ The "always-listening delay" trick</div>
+      <p>Each stem has its own 8192-sample (~170&nbsp;ms) <code>int16</code> delay line that is <strong>always
+      recording</strong>, even when echo is off (a flag tells it to record-but-not-output). So when you switch echo on,
+      it <em>instantly</em> plays back the last 170&nbsp;ms instead of starting from silence. ericlewis:
+      <em>"because the buffer is always recording, activating the echo effect instantly plays back the past audio history
+      of the stem."</em> <span class="src">Discord #firmware, 2026-05-09</span></p>
+    </div>
+
+    <h2>Why effects need the embedded timing data</h2>
+    <p>The album carries musical-timing side data in each sector. Per TimK, <em>"the embedded timing data is essential for
+      looping, gate, delay, and 2 of LPF presets"</em> — those effects sync to the beat via a counter the firmware reads,
+      not a free-running clock.</p>
+    <div class="kv">
+      <dt>Resolution</dt><dd>24 PPQN — 4 quarters × 24 = 96 steps per bar</dd>
+      <dt>MIDI clock byte</dt><dd><code>0xF8</code> at 31250 baud, 128&nbsp;µs per pulse</dd>
+      <dt>Where it lives</dt><dd>per-sector trailer at the end of block 0 (the 2026-05-18 encoder writes a clock counter at byte 2040)</dd>
+    </div>
+    <div class="box warn">
+      <div class="box-h">✕ Read spec vs write spec — don't conflate</div>
+      <p>The wiki documents up to 8 bytes of side data <em>per TE-block</em> (2 sync + 2 tempo + 4 LED) — that's what
+      stock firmware <strong>can read</strong>. The solderless encoder writes a much smaller <strong>per-sector</strong>
+      trailer (no per-block data). Albums still play. Treat the wiki layout as a read spec, not a thing your encoder must
+      produce — and note the counter-range discrepancy (encoder <code>49152</code> vs Galapagoose's older
+      <code>24,489</code>) is an open known-unknown. <span class="src">references/10-midi-timing-encoding.md</span></p>
+    </div>
+    <p>The public <code>audiothingies</code> effect code runs these LFOs/gates <em>free-running</em>; the stock firmware
+      drives them off the sync counter. For stock-feel custom firmware, that's the wiring you'd add — and exactly the
+      kind of detail worth confirming with ericlewis rather than guessing.</p>
+
+    <h2>What's NOT in the stock rack</h2>
+    <p>No reverb, no pitch-shift, no bit-crusher, no separate compressor/tape-saturation as user effects. The unreleased
+      custom OSes (virtualflannel's beat-repeat / bit-crusher / pitch ±12¢) <em>extend</em> beyond stock — so if you see
+      those attributed to "the SP-1 effects," that's custom code, not the original rack.</p>
+
+    <div class="pager">
+      <a href="recovery.html"><span class="dir">← Prev</span><span class="ttl">10 · Debug &amp; recovery</span></a>
+      <a class="next" href="lab.html"><span class="dir">Next →</span><span class="ttl">12 · Your first firmware</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

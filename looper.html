@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case study: the tape looper · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">13 · Worked example</div>
+    <h1>Case study: the tape looper</h1>
+    <p class="lede">In June 2026 someone shipped exactly the thing the rest of this guide builds toward: a complete,
+      buildable, <strong>audio-capable</strong> custom firmware. <code>chattock/sp1-tape-looper</code> turns the SP-1
+      into a four-track tape looper — and it's the best public reference for the hard parts (I²S bring-up, real-time
+      flash streaming, a custom on-disk layout). This page reads it as a worked example of the path you've just learned.</p>
+
+    <div class="box gold">
+      <div class="box-h">▲ This changes the landscape</div>
+      <p>The rest of this guide was written against a 2026-05-18 snapshot in which the only public buildable firmware
+      was <code>sp1-midi</code> (a MIDI controller, no audio). This firmware <strong>postdates that snapshot</strong> —
+      its source comments are dated June 2026 (hardware verified 2026-06-05, flash benchmark 2026-06-12). It is, as far
+      as this guide knows, the <strong>first public, buildable, audio-capable SP-1 firmware.</strong> Treat its specific
+      claims as newer than the skill corpus and verify against the repo. <span class="src">github.com/chattock/sp1-tape-looper</span></p>
+    </div>
+
+    <h2>What it does</h2>
+    <p>You feed audio in over USB-C (the SP-1 appears to your computer as a USB sound card), hold the four track buttons
+      to record layered loops, and they play back together through the speaker or headphones. The rocker is tape-style
+      varispeed (speed + pitch together). Loops are stored in the nRF-attached flash and survive power-off <em>and</em>
+      re-flashing. There's a companion web page that moves loops on and off the device as WAV/MP3.</p>
+    <div class="kv">
+      <dt>Type</dt><dd>4-track hold-to-record looper (not a stem player; not the TE album format)</dd>
+      <dt>Licence</dt><dd>MIT — contributions and forks welcome</dd>
+      <dt>Built on</dt><dd>Zephyr RTOS; credits TimK's <code>SP-1-dev</code> for the pin map, codec/clock notes, and eMMC protocol</dd>
+      <dt>Two builds</dt><dd>24&nbsp;kHz default (more flash headroom) and 48&nbsp;kHz full-fidelity, chosen by a <code>DECIM</code> compile switch</dd>
+    </div>
+
+    <h2>Architecture — three threads, one flash owner</h2>
+    <p>The whole player is one <code>main.c</code> (~2,800 lines) plus an eMMC driver. The design is a clean separation
+      you can copy:</p>
+    <pre><code>USB-C in ──► [USB ring] ──► audio engine ──► I2S bus ──► speaker / HP
+                                 │  ▲
+                         record  ▼  │  play
+                            [ eMMC flash: one region per track ]</code></pre>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Thread</th><th>Job</th><th>Touches flash?</th></tr></thead>
+      <tbody>
+        <tr><td><code>audio_thread</code></td><td>Runs every I²S block (256 frames). Mixes 4 playback tracks + live USB monitor; decimates live input into the one recording track. Never blocks.</td><td><span class="pill no">RAM only</span></td></tr>
+        <tr><td><code>streamer_thread</code></td><td>The <strong>only</strong> thread that touches flash. Writes the in-progress recording; reads playing tracks ahead of the playhead into per-track SPSC ring buffers.</td><td><span class="pill ok">yes — sole owner</span></td></tr>
+        <tr><td><code>midi_thread</code> + main</td><td>MIDI-clock housekeeping; an ~8&nbsp;ms control loop for buttons, faders, LEDs, power, and a USB-serial status line.</td><td><span class="pill no">no</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box tip">
+      <div class="box-h">✓ The lesson: single flash owner + read-ahead rings</div>
+      <p>Real-time audio off a slow, occasionally-stalling flash works because exactly one thread does the blocking I/O
+      and the audio thread only ever reads RAM. The streamer keeps each track's ring filled ~341&nbsp;ms ahead so the
+      flash's ~150&nbsp;ms random-access stalls never reach the speaker. This is the pattern your <a class="link" href="audio.html">audio page</a> hand-waved as "read ahead to hide housekeeping" — here's it done.</p>
+    </div>
+
+    <h2>The novel move: USB Audio Class 2 input</h2>
+    <p>Instead of the bootloader's <code>0x39</code> album-upload path, this firmware presents itself as a
+      <strong>USB Audio Class 2 speaker</strong> on Zephyr's next-gen USB stack, with an explicit-feedback regulator
+      driven by USB SOF events. Audio streams in live, in real time — a completely different data path from anything in
+      the protocol chapter.</p>
+    <pre><code><span class="c"># prj.conf — the new-stack composite device</span>
+CONFIG_USB_DEVICE_STACK_NEXT=y
+CONFIG_USBD_AUDIO2_CLASS=y     <span class="c"># UAC2 speaker — real-time audio IN</span>
+CONFIG_USBD_CDC_ACM_CLASS=y    <span class="c"># serial console + loop-transfer protocol</span>
+CONFIG_UDC_ENABLE_SOF=y        <span class="c"># SOF drives the feedback regulator</span></code></pre>
+    <p>USB identity is <strong>VID <code>0x1915</code> / PID <code>0x5210</code></strong> ("softmodded" / "SP-1 Audio")
+      — a third ID pair beyond the factory <code>2367/1701</code> and sp1-midi's <code>1209/0001</code> from the
+      <a class="link" href="protocol.html">protocol page</a>. (<code>0x1915</code> is Nordic's own vendor ID.)</p>
+
+    <h2>Its own flash layout (not the TE format)</h2>
+    <p>This is a clean illustration of "the eMMC is yours to format." The looper takes the whole card from block 0:
+      block 0 is a metadata header that <strong>deliberately overwrites TE's <code>ALBUM_PR</code> index</strong>, then
+      4 songs × 4 tracks of fixed regions.</p>
+    <ul>
+      <li>Each track gets a fixed region, <strong>rounded up to an 8&nbsp;KB (16-block) boundary</strong> so every flush
+        burst lands on exactly one internal eMMC page — no slow read-modify-write. (This is the same 8&nbsp;KB-page fact
+        your <a class="link" href="audio.html">audio page</a> notes about TE's own sectors, used for a different end.)</li>
+      <li>Tracks are independent — <strong>no mixdown is ever stored.</strong> An overdub is one region being written
+        while the others are read; mixing happens live and is never written back.</li>
+      <li>Each build stamps a distinct on-flash magic (<code>'SE24'</code> / <code>'SE48'</code>) so switching builds
+        reformats rather than misreading.</li>
+    </ul>
+    <div class="box note">
+      <div class="box-h">◆ "24 kHz" is a storage rate, not the bus rate</div>
+      <p>Don't misread the build names. The I²S frame is always a true <strong>48&nbsp;kHz</strong> — the CS42L42 codec
+      masters it from the 3.072&nbsp;MHz oscillator, exactly as the audio chapter describes. The default build records
+      loops <strong>mono, decimated by <code>DECIM=2</code> → 24&nbsp;kHz</strong> to halve flash bandwidth, then
+      interpolates back up on playback. The SP-1 is not "running at 24&nbsp;kHz."</p>
+    </div>
+
+    <h2>New hardware info: the sync jack is mapped</h2>
+    <div class="box cite">
+      <div class="box-h">✦ Candidate resolution to a known-unknown — verify before trusting</div>
+      <p>This guide's reference notes flag the second-jack / MIDI GPIOs as <strong>not in the published pinout</strong>.
+      This firmware drives them, citing "TimK's sync-jack schematic":</p>
+      <ul style="margin-bottom:0">
+        <li><strong>MIDI</strong> on <code>P0.23</code> (BC807 PNP base → SYNC_RING; the PNP inverts, so a
+          <code>MIDI_INVERT</code> flag compensates). Bit-banged 31250-baud, 24-PPQN clock + Start/Stop, timed off a
+          hardware timer so it doesn't disturb audio.</li>
+        <li><strong>Pocket-Operator sync</strong> on <code>P0.20</code> / <code>P0.17</code> (PO_A/PO_B → SYNC_TIP), a
+          ~5&nbsp;ms pulse at 2 PPQN.</li>
+      </ul>
+    </div>
+    <p>If accurate, this resolves a long-standing open question. It either reflects a TimK schematic published after the
+      skill's 2026-05-18 freeze, or the author's own tracing — <strong>treat as unconfirmed until checked against TimK
+      directly</strong>, and a good entry for <code>questions-for-timk.md</code>.</p>
+
+    <h2>Robustness — the part worth stealing wholesale</h2>
+    <p>The author treats the "you can brick this and there's no reset pin" reality seriously. The firmware codifies a
+      "BIG FIVE" that maps one-to-one onto this guide's safety rules:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Safeguard</th><th>How</th></tr></thead>
+      <tbody>
+        <tr><td>App at <code>0x20000</code></td><td>Linked to load above the reserved bootloader region.</td></tr>
+        <tr><td>Watchdog</td><td>4&nbsp;s WDT fed continuously; the final backstop for a hang.</td></tr>
+        <tr><td>Any fault → clean reboot</td><td><code>k_sys_fatal_error_handler</code> turns a bad pointer / stack overflow / panic into <code>sys_reboot()</code>, never a dead hang. MPU stack guard + stack sentinel on.</td></tr>
+        <tr><td>SYSTEM_OFF → bootloader</td><td>Power-off returns control to the bootloader; <code>RESETREAS</code> cleared on boot and before sleep.</td></tr>
+        <tr><td>Recovery combo</td><td>Hold Track&nbsp;1 + Track&nbsp;4 ~1.2&nbsp;s to drop back to firmware-loading mode — always available.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box note">
+      <div class="box-h">◆ A telling build note</div>
+      <p>The author <em>deliberately does not</em> enable <code>-O2</code> (<code>CONFIG_SPEED_OPTIMIZATIONS</code>):
+      a comment records that the mixer interpolation has latent signed-overflow UB that <code>-O2</code> "weaponizes"
+      and crashes the device, so it stays on <code>-Os</code>. A good reminder that on this hardware, a green build is
+      not the same as a stable one — test on the device.</p>
+    </div>
+
+    <h2>One divergence to record, not smooth over</h2>
+    <p>The eMMC access detail differs from the skill's standard line. The skill standardizes on "1-bit mode at 32&nbsp;MHz"
+      and warns against claiming faster. This firmware's driver header calls itself a 1-bit bit-bang port of TimK's
+      <code>emmc.c</code>, while <code>main.c</code> describes driving it through the nRF's <strong>hardware SPI engine
+      at 16&nbsp;MHz</strong> (~1333 blocks/s sustained). Same chip, lower clock, SPI-engine path — not a contradiction,
+      but a genuine second data point worth logging rather than averaging away.</p>
+
+    <h2>Why it matters for you</h2>
+    <ul>
+      <li>It's a <strong>real, working reference</strong> for everything this guide treats as the frontier: codec/I²S
+        bring-up "verbatim from Tim's wiki," the streamer architecture, and a purpose-built flash layout.</li>
+      <li>It proves the <a class="link" href="lab.html">roadmap</a> end-to-end — including that an audio-capable build
+        fits comfortably in the 892&nbsp;KB slot (both <code>.bin</code>s are ~83&nbsp;KB).</li>
+      <li>It updates the <a class="link" href="state.html">landscape</a>: "no public audio firmware exists" is no longer
+        true as of June 2026.</li>
+    </ul>
+
+    <div class="pager">
+      <a href="lab.html"><span class="dir">← Prev</span><span class="ttl">12 · Your first firmware</span></a>
+      <a class="next" href="state.html"><span class="dir">Next →</span><span class="ttl">14 · Who built what</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

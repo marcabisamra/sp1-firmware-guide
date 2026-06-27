@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SP-1 Firmware Dev Guide</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">Teenage Engineering · nRF52840 · Zephyr</div>
+    <h1>Build your own firmware for the SP&#8209;1</h1>
+    <p class="lede">A guided path from "I have a sealed Kanye&nbsp;×&nbsp;TE stem player on my desk" to
+      "I am compiling and flashing custom firmware I wrote." Distilled from three years of community
+      reverse-engineering — and written to match the primary sources, not to guess.</p>
+
+    <div class="hero">
+      <p style="margin-top:0"><strong>What this is.</strong> The SP-1 (a.k.a. <em>Stem Player SP-01</em>) is an
+      unreleased prototype built around a Nordic <strong>nRF52840</strong> SoC with a 4&nbsp;GB eMMC. The community
+      bypassed its security, dumped the firmware, documented a bootloader you can reach with two buttons, and
+      published a buildable <strong>Zephyr</strong> board support package. That means you can write C++,
+      compile it, and flash it over USB-C with no soldering.</p>
+      <p style="margin-bottom:0"><strong>What you'll be able to do by the end.</strong> Understand the hardware,
+      reach the bootloader and speak its protocol, stand up the Zephyr toolchain, build the public BSP,
+      understand the audio engine and on-disk format well enough to play your own stems, and ship a first
+      firmware safely.</p>
+    </div>
+
+    <div class="box gold">
+      <div class="box-h">▲ The one rule that matters most</div>
+      <p>This device has a community that has <strong>publicly called out AI hallucinations</strong> about it —
+      by name, with corrections. Wrong opcodes, a fictional "24-bit little-endian PCM" format, invented workflow
+      steps. This guide cites a source for every technical claim and flags the known traps. When you extend it
+      with an AI assistant, hold it to the same standard. See <a class="link" href="accuracy.html">Don't hallucinate</a>.</p>
+    </div>
+
+    <h2>The journey, in eight moves</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Know the machine</h3>
+        <p>One Cortex-M4F, two audio codecs, an eMMC, a Bluetooth module, 8 LEDs and a fistful of analog buttons.
+          Learn the chip map and the flash memory map before you touch anything. → <a class="link" href="device.html">The device</a></p>
+      </div>
+      <div class="step">
+        <h3>Understand how it was opened</h3>
+        <p>A voltage-glitch APPROTECT bypass on attempt #8,504 produced the firmware dump that everything else is
+          built on. You almost certainly won't repeat it — but you should know what it bought you.
+          → <a class="link" href="history.html">How it was cracked</a></p>
+      </div>
+      <div class="step">
+        <h3>Reach the bootloader</h3>
+        <p><strong>Hold Track&nbsp;1 + Track&nbsp;4, plug in USB-C.</strong> The device enumerates as a serial port
+          for 60 seconds and accepts firmware. This is your no-soldering flash path. → <a class="link" href="bootloader.html">Bootloader &amp; flashing</a></p>
+      </div>
+      <div class="step">
+        <h3>Speak its protocol</h3>
+        <p>COBS-framed packets, a CRC-8 table, a small opcode palette. Enough to write your own flasher when the
+          web tool is offline. → <a class="link" href="protocol.html">The wire protocol</a></p>
+      </div>
+      <div class="step">
+        <h3>Stand up Zephyr</h3>
+        <p>Zephyr RTOS + SDK + the <code>stem_player</code> board. One <code>cmake</code> line produces a flashable
+          <code>zephyr.bin</code>. → <a class="link" href="build.html">Build environment</a></p>
+      </div>
+      <div class="step">
+        <h3>Build the BSP</h3>
+        <p><code>ericlewis/sp1-midi</code> is the only public, buildable starting point. It's a MIDI controller, not
+          a stem player — but it gives you working drivers for everything. → <a class="link" href="bsp.html">The sp1-midi BSP</a></p>
+      </div>
+      <div class="step">
+        <h3>Add audio</h3>
+        <p>The hard part. The on-disk sample format is a custom byte-interleave, the eMMC is "formatted strangely,"
+          and clean-room reference code exists for both. → <a class="link" href="audio.html">Audio engine &amp; format</a></p>
+      </div>
+      <div class="step">
+        <h3>Ship your first firmware</h3>
+        <p>A safe, concrete first project — blink the LEDs from your own code — then the path to a player.
+          → <a class="link" href="lab.html">Your first firmware</a></p>
+      </div>
+    </div>
+
+    <h2>Jump in</h2>
+    <div class="cards">
+      <a class="card" href="device.html"><div class="ic">01 · HARDWARE</div><h4>The device</h4><p>Chip map, peripherals, memory map, pin assignments.</p></a>
+      <a class="card" href="bootloader.html"><div class="ic">03 · FLASH</div><h4>Bootloader</h4><p>The two-button trigger and how flashing works.</p></a>
+      <a class="card" href="build.html"><div class="ic">05 · TOOLCHAIN</div><h4>Build env</h4><p>Zephyr, the SDK, and the one command that matters.</p></a>
+      <a class="card" href="codecs.html"><div class="ic">08 · MAKE SOUND</div><h4>Codecs &amp; I²S</h4><p>The clock topology that turns samples into audio.</p></a>
+      <a class="card" href="lab.html"><div class="ic">12 · HANDS-ON</div><h4>First firmware</h4><p>From clone to a blink you wrote, safely.</p></a>
+      <a class="card" href="looper.html"><div class="ic">13 · CASE STUDY</div><h4>Tape looper</h4><p>A real, public audio firmware, read end to end.</p></a>
+      <a class="card" href="reference.html"><div class="ic">16 · LOOKUP</div><h4>Cheat-sheet</h4><p>Pins, opcodes, constants, and where to cite.</p></a>
+    </div>
+
+    <div class="box note">
+      <div class="box-h">◆ Honesty about freshness</div>
+      <p>This guide is a snapshot synthesized <strong>through 2026-05-18</strong>. Unreleased firmwares may have shipped;
+      the web flasher may have changed; people may have corrected things since. For "what's happening right now"
+      questions, treat the live Discord as the source of truth and this site as the map.</p>
+    </div>
+
+    <div class="pager">
+      <span></span>
+      <a class="next" href="device.html"><span class="dir">Next →</span><span class="ttl">01 · The device</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
