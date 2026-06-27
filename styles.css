@@ -196,6 +196,33 @@ pre:hover .copy-btn { opacity: 1; }
   padding: 0.5px 6px; white-space: nowrap;
 }
 
+/* ---------- Glossary tooltips ---------- */
+abbr.gl {
+  text-decoration: none;
+  border-bottom: 1px dotted var(--ink-faint);
+  cursor: help; position: relative;
+}
+abbr.gl:hover, abbr.gl:focus {
+  color: var(--orange-2); border-bottom-color: var(--orange); outline: none;
+}
+/* floating tooltip element (JS-positioned, appended to <body> so it never clips) */
+#gl-tip {
+  position: fixed; z-index: 9999; display: none; pointer-events: none;
+  max-width: 280px; text-align: left;
+  background: #060607; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 9px;
+  padding: 9px 12px;
+  font-family: var(--sans); font-size: 12.5px; font-weight: 400; line-height: 1.46;
+  letter-spacing: 0; text-transform: none;
+  box-shadow: 0 16px 40px -10px #000, 0 0 0 1px #ffffff08;
+  opacity: 0; transition: opacity .13s ease;
+}
+#gl-tip .gl-term {
+  display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .03em;
+  color: var(--orange-2); margin-bottom: 4px;
+}
+@media (max-width: 560px) { #gl-tip { max-width: 220px; } }
+
 /* ---------- Tables ---------- */
 .tbl-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
