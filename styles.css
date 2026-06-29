@@ -151,8 +151,6 @@ main {
 }
 .brand-btn:hover { color: var(--orange-2); }
 .brand-btn svg { display: block; }
-/* printer icon enlarged 2× (16px → 32px) */
-#print-link, #print-link svg { width: 32px; height: 32px; }
 
 #nav .group { padding: 16px 14px 2px; }
 #nav .group-label {
