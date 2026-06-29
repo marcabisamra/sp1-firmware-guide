@@ -160,7 +160,7 @@ main {
   text-transform: uppercase; color: var(--ink-faint);
   padding: 6px 10px 8px;
 }
-#nav a {
+#nav .group a {
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px; margin: 1px 0;
   border-radius: 7px;
@@ -169,13 +169,13 @@ main {
   font-size: 14px;
   transition: background .12s, color .12s;
 }
-#nav a .num {
+#nav .group a .num {
   font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
   min-width: 18px; text-align: right;
 }
-#nav a:hover { background: var(--bg-3); color: var(--ink); }
-#nav a.active { background: var(--active-bg); color: var(--orange-2); }
-#nav a.active .num { color: var(--orange); }
+#nav .group a:hover { background: var(--bg-3); color: var(--ink); }
+#nav .group a.active { background: var(--active-bg); color: var(--orange-2); }
+#nav .group a.active .num { color: var(--orange); }
 
 .nav-foot {
   margin: 18px 22px 0; padding-top: 14px;
