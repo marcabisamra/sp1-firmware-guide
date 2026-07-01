@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TimK's SP-1-dev wiki (snapshot) · SP-1 Firmware Guide</title>
+<link rel="stylesheet" href="styles.css">
+  <script>(function(){try{var t=localStorage.getItem("theme");if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<button id="menu-btn">☰ menu</button>
+<div class="layout">
+  <aside id="nav"></aside>
+  <main><div class="content">
+
+    <div class="eyebrow">17 · Primary source</div>
+    <h1>Snapshot: TimK's SP-1-dev wiki</h1>
+    <p class="lede">A captured snapshot of <code>github.com/timknapen/SP-1-dev/wiki</code> — Tim Knapen's official
+      developer wiki and the closest thing to a first‑party hardware reference for the SP‑1. Much of what the rest of
+      this guide asserts about pins, clocks, codec bring‑up and the on‑disk audio format traces back here. It's mirrored
+      so you can read it inside the guide (with the same tooltips and print view); the live wiki is the source of truth.</p>
+
+    <div class="box cite">
+      <div class="box-h">✦ Provenance</div>
+      <p><span class="src">github.com/timknapen/SP-1-dev/wiki</span> — MIT‑licensed. Last edited <strong>2026‑04‑08</strong>;
+      this snapshot is byte‑identical to the guide's bundled corpus <span class="src">assets/SP-1-dev-2026-05-13/wiki/</span>.
+      The pin numbers come from <span class="src">src/stemplayer_pins.h</span> in the same repo. The wiki is explicitly
+      "under construction" — some sections are stubs and marked as such below.</p>
+    </div>
+
+    <div class="box note">
+      <div class="box-h">◆ Who is TimK</div>
+      <p>Tim Knapen (a.k.a. <em>tkt1000</em> / <em>timknapen</em>) is a lead firmware engineer on the SP‑1 reverse
+      engineering effort. This is a <strong>documentation</strong> repo — a wiki plus a pin header and images — <em>not</em>
+      a buildable firmware. Don't confuse it with ericlewis's <code>sp1-midi</code> BSP or the <a class="link" href="looper.html">tape looper</a>.</p>
+    </div>
+
+    <h2>Main components</h2>
+    <p>The six chips the whole device is built around:</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Part</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td><code>nRF52840</code></td><td>Nordic ARM Cortex‑M4 32‑bit MCU @ 64&nbsp;MHz, 1&nbsp;MB flash, 256&nbsp;kB RAM — the main processor that runs your firmware.</td></tr>
+        <tr><td><code>TAS2505</code></td><td>TI audio amplifier for the <strong>speaker</strong>; set up and controlled over I²C.</td></tr>
+        <tr><td><code>CS42L42</code></td><td>Cirrus Logic audio codec/amp for the <strong>headphones</strong>; also generates the I²S LRCLK.</td></tr>
+        <tr><td><code>THGBMNG5D1LBAIL</code></td><td>Toshiba/Kioxia <strong>4&nbsp;GB eMMC 5.0</strong> flash — holds all audio data.</td></tr>
+        <tr><td><code>CYBT-353027-02</code></td><td>Infineon Bluetooth Classic/BLE‑Audio module — all BT is handled here, not by the nRF radio.</td></tr>
+        <tr><td><code>BQ24232</code></td><td>TI USB‑friendly Li‑ion battery charger with power‑path management.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">wiki/Hardware-overview.md</span></p></div>
+
+    <h2>Hardware overview</h2>
+    <p>The nRF52840 is used here <em>not</em> for its well‑known BLE radio — there is <strong>no antenna</strong> connected
+      to the MCU on the PCB; all Bluetooth is provided by the CYBT module. The nRF has an external crystal for the
+      high‑frequency clock but synthesizes its own <code>LFCLK</code>.</p>
+    <div class="kv">
+      <dt>Audio</dt><dd>Everything runs over <strong>I²S at 48&nbsp;kHz, 24‑bit stereo</strong>. The master clock is the on‑board <strong>3.07&nbsp;MHz oscillator marked "A0XRD."</strong> TAS2505 drives the speaker (set up via I²C); CS42L42 drives the headphones, generates the I²S LRCLK, and is also set up via I²C; the CYBT module is configured over UART but receives audio over I²S.</dd>
+      <dt>General IO</dt><dd>Only <strong>one</strong> button is read directly by the MCU over GPIO — the <strong>Function</strong> button. Every other button is part of a <strong>resistor ladder</strong> read by two ADC pins: (1) Play + the 4 track buttons, (2) Volume up/down + forward/reverse. All 8 LEDs are driven directly by the MCU.</dd>
+      <dt>Memory</dt><dd>A 4&nbsp;GB flash chip stores all audio, connected as <strong>1‑bit eMMC</strong> — only <code>DAT0</code>, <code>CMD</code> and <code>CLK</code> are used.</dd>
+      <dt>USB</dt><dd>The USB‑C connector is wired for battery charging <em>and</em> the data lines reach the MCU, so it can do <strong>CDC ACM</strong> (USB serial).</dd>
+      <dt>MIDI / PO sync</dt><dd>A <strong>second headphone jack</strong> can be used for MIDI or Pocket‑Operator sync.</dd>
+    </div>
+    <p>The full, development‑ready pin map lives in <span class="src">src/stemplayer_pins.h</span>. <span class="src">wiki/Hardware-overview.md</span></p>
+
+    <h2>Compiling for the bootloader</h2>
+    <p>Rules your firmware must obey to be flashable and recoverable — this is the primary source for the guide's "BIG&nbsp;FIVE":</p>
+    <ul>
+      <li>The bootloader writes your application starting at <code>0x20000</code>; the application's max size is <code>0xDEFFF</code>.</li>
+      <li>The bootloader <strong>starts the watchdog</strong>. If your app doesn't feed it, the device resets after <strong>5&nbsp;seconds</strong>.</li>
+      <li><code>LFCLK</code>, <code>HFCLK</code> and some peripherals — <code>PWM2</code>, <code>PWM3</code>, <code>SAADC</code> — are <strong>already started</strong> by the bootloader. With the nRF5 SDK, re‑initializing them can make SDK calls fail (it assumes they're uninitialized).</li>
+      <li>The SP‑1 has <strong>no hard reset</strong>. You must provide a way to enter <code>SYSTEM_OFF</code> to return to the bootloader.</li>
+      <li><code>RESETREAS</code> must be cleared before going back to the bootloader.</li>
+    </ul>
+    <div class="box warn">
+      <div class="box-h">✕ TimK's warning (verbatim intent)</div>
+      <p>There is no hard reset or reset pin on the SP‑1 and no easy way to power‑cycle it. <strong>Fully test new firmware
+      on a device with debugger access before loading it onto a stock SP‑1</strong>, and always make sure your firmware
+      can get back to the bootloader. Firmware is uploaded with the <span class="src">solderless.engineering</span> update
+      utility. <span class="src">wiki/Bootloader.md</span></p>
+    </div>
+
+    <h2>Peripherals</h2>
+    <p>TimK's examples target the old, unsupported <strong>nRF5 SDK v17.0.2</strong> (what he used), but note they map onto
+      the current nRF Connect SDK too. <span class="src">wiki/Peripherals.md</span></p>
+
+    <h3>I²S — audio out</h3>
+    <p>Pins (from <code>stemplayer_pins.h</code>): <code>DOUT&nbsp;P1.09</code>, <code>LRCLK&nbsp;P0.11</code>,
+      <code>SCLK&nbsp;P0.12</code>, <code>OSC_EN&nbsp;P0.13</code>. Configure the nRF I²S peripheral in <strong>slave
+      mode</strong> — the master/bit clock comes from the 3.072&nbsp;MHz oscillator and the LRCLK from the CS42L42.
+      Enable the oscillator by driving <code>OSC_EN</code> high, and configure CS42L42 to generate LRCLK.</p>
+    <pre><code><span class="c">// key nrf_drv_i2s config for SP-1</span>
+config.mode        = NRF_I2S_MODE_SLAVE;
+config.mck_setup   = NRF_I2S_MCK_DISABLED;   <span class="c">// external clock</span>
+config.ratio       = NRF_I2S_RATIO_64X;      <span class="c">// 64 SCLK / frame -> 48 kHz</span>
+config.format      = NRF_I2S_FORMAT_I2S;
+config.sample_width= NRF_I2S_SWIDTH_24BIT;
+config.channels    = NRF_I2S_CHANNELS_STEREO;</code></pre>
+    <p>TimK uses buffers of <strong>256 samples (128 frames)</strong>. <span class="src">wiki/I2S.md</span></p>
+
+    <h3>I²C — codec control</h3>
+    <p><strong>TAS2505 is at address <code>0x18</code>, CS42L42 at <code>0x48</code>.</strong> The PCB has 4.7&nbsp;kΩ
+      pull‑ups on SDA/SCL and is tested to work with <code>nrfx_twim</code> up to <strong>400&nbsp;kHz</strong>. You must
+      configure a codec over I²C before any audio will play. CS42L42 drives the headphones and provides the I²S LRCLK;
+      its PLL is programmed from registers documented in the Cirrus datasheet (the wiki includes the full power‑up
+      sequence — PLL control, MCLK source select, oscillator‑switch poll until <code>0x1109 == 0x02</code>).</p>
+    <div class="box note">
+      <div class="box-h">◆ No mic path</div>
+      <p>CS42L42 can act as a mic input and its <code>HSIN±</code> pins look wired for it, but there is <strong>no audio
+      path back from CS42L42 to the MCU</strong> on the SP‑1 (<code>ASP_SDOUT</code> is unconnected). <span class="src">wiki/I2C.md</span></p>
+    </div>
+
+    <h3>PWM, SAADC</h3>
+    <div class="kv">
+      <dt>PWM</dt><dd>Drives the front <strong>track LEDs</strong> and the <strong>playback LEDs</strong> between the PLAY and FUNCTION buttons. (Uses PWM2/PWM3, which the bootloader already started.) <span class="src">wiki/PWM.md</span></dd>
+      <dt>SAADC</dt><dd>Reads the button <strong>ladders</strong>, the <strong>faders</strong>, and the <strong>battery level</strong>. <span class="src">wiki/SAADC.md</span></dd>
+    </div>
+
+    <h3>Battery charger — BQ24232</h3>
+    <p>Configured to allow a max <strong>500&nbsp;mA</strong> draw from USB, controlled purely by GPIO (no I²C):</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Signal</th><th>Pin</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>nCE</code></td><td>P0.21</td><td>Active‑low input — drive low to <strong>enable charging</strong>.</td></tr>
+        <tr><td><code>nCHG</code></td><td>P0.22</td><td>Open‑drain output — low while the battery is <strong>charging</strong>.</td></tr>
+        <tr><td><code>nPGOOD</code></td><td>P0.24</td><td>Open‑drain output — low when USB input voltage is <strong>good</strong>.</td></tr>
+        <tr><td><code>ISET</code></td><td>P1.00</td><td>Charge‑current monitor (via a voltage divider to the MCU).</td></tr>
+        <tr><td><code>BATT_LEVEL</code></td><td>P0.28 / AIN4</td><td>Battery voltage via a divider — read with SAADC (<code>NRF_SAADC_INPUT_AIN4</code>).</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">wiki/Battery-charger.md</span></p></div>
+
+    <h3>Bluetooth module — CYBT-353027-02</h3>
+    <p>Connected to the nRF's UART and I²S lines. UART: <code>CTS&nbsp;P1.01</code>, <code>RXD&nbsp;P1.02</code>,
+      <code>RTS&nbsp;P1.03</code>, <code>TXD&nbsp;P1.04</code>; plus <code>SPI_CSN&nbsp;P1.05</code> and
+      <code>nRST&nbsp;P0.10</code>. TimK notes he <strong>hasn't worked on the Bluetooth interface yet</strong> — "help is
+      welcome." So there is no public reference for actually driving it. <span class="src">wiki/Bluetooth-Module.md</span></p>
+
+    <h2>Storage &amp; the on‑disk audio format</h2>
+    <p>This is the authoritative description the guide's <a class="link" href="audio.html">audio page</a> and
+      <a class="link" href="internals.html">internals</a> are built on. There is <strong>no filesystem</strong> — just
+      album metadata followed by a list of songs at known sector offsets.</p>
+    <div class="kv">
+      <dt>Sector</dt><dd><strong>8192 bytes</strong> (<code>0x2000</code>) = 16 native 512‑byte eMMC blocks.</dd>
+      <dt>Sector 0</dt><dd>Reserved for <strong>album metadata</strong>.</dd>
+      <dt>Audio</dt><dd>Starts at the second sector, offset <code>0x2000</code>.</dd>
+    </div>
+
+    <h3>Sector → block → frame → stem frame</h3>
+    <p>All audio is <strong>24‑bit, 48&nbsp;kHz, 8‑channel</strong> (4 stereo tracks). The nesting:</p>
+    <ul>
+      <li><strong>Sector</strong> (8192&nbsp;B) = 340 audio frames (7.083&nbsp;ms @ 48&nbsp;kHz) + reserved bytes:
+        <strong>2040–2041</strong> timing/sync, <strong>2042–2043</strong> tempo, <strong>2044–2047</strong> LED data.
+        A sector is 4 × 2048‑byte blocks.</li>
+      <li><strong>Block</strong> (2048&nbsp;B) = 85 audio frames.</li>
+      <li><strong>Audio frame</strong> (24&nbsp;B) = 4 stereo <em>stem frames</em>.</li>
+      <li><strong>Stem frame</strong> (6&nbsp;B) = 2 interleaved L/R samples.</li>
+    </ul>
+    <div class="box note">
+      <div class="box-h">◆ The 0 / 2 / 1 / 3 interleave</div>
+      <p>Frames are <strong>not</strong> stored sequentially. They're spread across the sector's 4 blocks in physical
+      order <strong>0, 2, 1, 3</strong> — which is exactly what lets the firmware read fewer blocks per sector at high
+      transport speed (tape FF/RW):</p>
+      <pre><code>int block_order[] = {0, 2, 1, 3};
+<span class="k">for</span>(int frame = 0; frame &lt; 340; frame++){
+    int block_id     = block_order[frame % 4];
+    int block_offset = 2048 * block_id;
+    int frame_offset = 24 * frame / 4;
+    int byte_offset  = block_offset + frame_offset;
+}</code></pre>
+    </div>
+
+    <h3>The stem‑frame byte layout (the one people get wrong)</h3>
+    <p>Inside a 6‑byte stem frame the L/R bytes are <strong>interleaved unconventionally</strong> — neighboring bytes
+      belong to different channels. This is the correct layout (and the reason "24‑bit little‑endian PCM" is a known
+      hallucination — see <a class="link" href="accuracy.html">Don't hallucinate</a>):</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Offset</th><th>Sample</th><th>Byte</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>L</td><td>MB (mid)</td></tr>
+        <tr><td>1</td><td>L</td><td>MSB</td></tr>
+        <tr><td>2</td><td>R</td><td>MSB</td></tr>
+        <tr><td>3</td><td>L</td><td>LSB</td></tr>
+        <tr><td>4</td><td>R</td><td>LSB</td></tr>
+        <tr><td>5</td><td>R</td><td>MB (mid)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <pre><code><span class="c">// reconstruct right-aligned 24-bit samples in int32</span>
+int32_t sample_left  = (data[1] &lt;&lt; 24) | (data[0] &lt;&lt; 16) | (data[3] &lt;&lt; 8);
+int32_t sample_right = (data[2] &lt;&lt; 24) | (data[5] &lt;&lt; 16) | (data[4] &lt;&lt; 8);</code></pre>
+    <div class="box cite"><div class="box-h">✦ Source</div><p><span class="src">wiki/Data-Structure.md</span>, <span class="src">wiki/Audio-format.md</span></p></div>
+
+    <h2>Album &amp; song metadata</h2>
+    <p>Sector 0 holds the album header, which the tape looper deliberately overwrites when it reformats storage.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Offset</th><th>Len</th><th>Album field</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>13</td><td>Magic bytes <code>ALBUM_PRESENT</code></td></tr>
+        <tr><td>13</td><td>4</td><td>Album length in 0x2000‑byte sectors</td></tr>
+        <tr><td>17</td><td>1</td><td>Number of songs</td></tr>
+        <tr><td>18</td><td>64</td><td>Album title (null‑terminated, padded with <code>'X'</code> = 0x58)</td></tr>
+        <tr><td>82</td><td>*</td><td>List of song metadata</td></tr>
+        <tr><td>8192</td><td>*</td><td>Second sector — start of audio</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>A valid album has <code>ALBUM_PRESENT</code> at the very start <strong>and</strong> as its very last bytes. Each
+      song record: <code>4</code> start‑offset (sectors), <code>4</code> length (sectors), <code>64</code> artist,
+      <code>64</code> title. <span class="src">wiki/Album-metadata-format.md</span></p>
+
+    <h2>What the wiki does <em>not</em> yet cover</h2>
+    <p>Marked as "Todo" / stubs at snapshot time — treat these as open, not documented:</p>
+    <ul>
+      <li>SWD / debugger setup and toolchain setup (<span class="src">wiki/Getting-started.md</span> is a stub).</li>
+      <li>Interfacing with the on‑board eMMC (only the data <em>format</em> is documented, not the driver).</li>
+      <li>Sending MIDI / Pocket‑Operator sync over the second jack.</li>
+      <li>Driving the CYBT Bluetooth module.</li>
+      <li>The stem‑upload protocol.</li>
+    </ul>
+    <p>For several of these the community has since gone further than the wiki — e.g. the <a class="link" href="looper.html">tape
+      looper</a> drives MIDI/PO sync and the eMMC, and <a class="link" href="internals.html">Player internals</a> covers the
+      streaming model. Where they diverge, the wiki is the first‑party baseline and those are newer, community data points.</p>
+
+    <div class="pager">
+      <a href="reference.html"><span class="dir">← Prev</span><span class="ttl">16 · Sources &amp; cheat-sheet</span></a>
+      <a class="next" href="glossary.html"><span class="dir">Next →</span><span class="ttl">18 · Glossary</span></a>
+    </div>
+
+  </div></main>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

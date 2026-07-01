@@ -35,7 +35,7 @@
     }
 
     // Nav order, with a hardcoded fallback so this works even if nav.js changes.
-    const FALLBACK = ["index.html","device.html","history.html","bootloader.html","protocol.html","build.html","bsp.html","looper.html","audio.html","codecs.html","power.html","recovery.html","internals.html","lab.html","state.html","accuracy.html","reference.html","glossary.html"];
+    const FALLBACK = ["index.html","device.html","history.html","bootloader.html","protocol.html","build.html","bsp.html","looper.html","audio.html","codecs.html","power.html","recovery.html","internals.html","lab.html","state.html","accuracy.html","reference.html","wiki.html","glossary.html"];
     const here = location.pathname.split("/").pop();
     const pages = ((window.SP1_PAGES && window.SP1_PAGES.length) ? window.SP1_PAGES : FALLBACK)
       .filter((h) => h && h !== here && h !== "print.html");

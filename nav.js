@@ -36,7 +36,8 @@
       { href: "state.html",          num: "14", title: "Who has built what" },
       { href: "accuracy.html",       num: "15", title: "Don't hallucinate" },
       { href: "reference.html",      num: "16", title: "Sources & cheat-sheet" },
-      { href: "glossary.html",       num: "17", title: "Glossary" },
+      { href: "wiki.html",           num: "17", title: "TimK's dev wiki" },
+      { href: "glossary.html",       num: "18", title: "Glossary" },
     ]},
   ];
 
@@ -176,11 +177,137 @@
     "stem": "One isolated track of a song (vocals, drums, …). The SP-1 mixes four.",
     "stems": "The isolated tracks of a song (vocals, drums, …) that the SP-1 mixes.",
     "ghidra": "An open-source reverse-engineering disassembler used to analyse the dumped firmware.",
+
+    /* ---- expanded, lenient set: assume the reader may not know these ---- */
+    "mcu": "Microcontroller unit — the processor chip (here the nRF52840) that runs the firmware.",
+    "arm": "The CPU architecture family; the nRF52840 uses an ARM Cortex-M4 core.",
+    "cortex-m4": "The 32-bit ARM CPU core inside the nRF52840.",
+    "ram": "Volatile working memory — the nRF52840 has 256 KB; contents are lost on power off.",
+    "flash": "Non-volatile memory that keeps data without power. The nRF has 1 MB internal; the SP-1 also has a separate 4 GB eMMC for audio.",
+    "firmware": "The software that runs directly on the device's microcontroller.",
+    "crystal": "A quartz timing element giving the MCU a precise high-frequency clock.",
+    "oscillator": "A circuit that produces a clock signal; the SP-1's 3.072 MHz oscillator masters the audio bus.",
+    "hfclk": "The nRF52840's high-frequency clock, sourced from an external crystal.",
+    "lfclk": "The nRF52840's low-frequency clock, synthesized on-chip.",
+    "thgbmng5d1lbail": "The Toshiba/Kioxia 4 GB eMMC 5.0 flash chip that stores the SP-1's audio.",
+    "kioxia": "The flash-memory maker (formerly Toshiba Memory) of the SP-1's eMMC chip.",
+    "codec": "Coder-decoder — a chip that converts between digital audio and analog (the CS42L42 here).",
+    "dac": "Digital-to-analog converter — turns digital samples into the analog signal a speaker or headphone plays.",
+    "amplifier": "A chip that boosts an audio signal to drive a speaker or headphones.",
+    "amp": "Amplifier — boosts an audio signal to drive a speaker or headphones.",
+    "li-ion": "Lithium-ion — the rechargeable battery chemistry, charged here by the BQ24232.",
+    "lipo": "Lithium-polymer — a lithium rechargeable battery type.",
+
+    "i2s": "Inter-IC Sound: the serial bus that streams digital audio samples to the codecs.",
+    "i2c": "A two-wire serial bus used to configure the codecs and read the charger.",
+    "twi": "Two-Wire Interface — Nordic's name for I²C.",
+    "uart": "A simple two-wire (TX/RX) serial link; used here to configure the Bluetooth module.",
+    "usb": "Universal Serial Bus — the USB-C port carries power and, on the SP-1, data for flashing and serial.",
+    "usb-c": "The reversible USB connector on the SP-1, used for charging and data.",
+    "spi": "Serial Peripheral Interface — a fast 4-wire serial bus; the looper drives the eMMC through the nRF's SPI engine.",
+    "spim": "The nRF52840's hardware SPI-master peripheral.",
+    "dma": "Direct Memory Access — hardware that moves data (e.g. audio buffers) without tying up the CPU.",
+    "scl": "The clock line of the I²C bus.",
+    "sda": "The data line of the I²C bus.",
+    "sclk": "Serial clock — the I²S bit clock (also the eMMC/SPI clock).",
+    "dout": "Data out — the I²S serial audio line from the nRF to the codecs.",
+    "cmd": "The eMMC command line, carrying commands and a CRC7 to the flash chip.",
+    "dat0": "The single data line used for the SP-1's 1-bit eMMC transfers.",
+    "cts": "Clear To Send — a UART hardware flow-control line.",
+    "rts": "Request To Send — a UART hardware flow-control line.",
+    "asrc": "Asynchronous Sample-Rate Converter — a codec block that retimes audio between clock domains.",
+    "acm": "Abstract Control Model — the USB-CDC flavour that makes the device look like a serial port.",
+
+    "pcm": "Pulse-Code Modulation — plain, uncompressed digital audio samples.",
+    "sample rate": "How many audio samples are captured per second (48 kHz on the SP-1).",
+    "bit depth": "How many bits encode each audio sample (24-bit here) — sets the dynamic range.",
+    "nyquist": "The rule that a sample rate can reproduce frequencies up to half its value (24 kHz at 48 kHz).",
+    "stereo": "Two audio channels, left and right.",
+    "mono": "A single audio channel.",
+    "interleaved": "Storing several channels' bytes woven together rather than in separate runs.",
+    "interleave": "To weave multiple channels' data together in memory or on disk.",
+    "endian": "Byte order — which end of a multi-byte number is stored first.",
+    "little-endian": "A byte order that stores the least-significant byte first.",
+    "msb": "Most-significant byte or bit — the highest-value part of a number.",
+    "lsb": "Least-significant byte or bit — the lowest-value part of a number.",
+    "frame": "One sample across all channels at an instant; the SP-1's audio frame is 24 bytes (4 stereo stems).",
+    "sector": "The SP-1's 8192-byte storage unit (16 eMMC blocks), holding 340 audio frames.",
+    "block": "A subdivision of a sector — 2048 bytes / 85 frames on the SP-1 (or a native 512-byte eMMC block).",
+    "trailer": "The reserved bytes at the end of each sector holding timing, tempo and LED data.",
+    "prefetch": "Reading data off flash ahead of when it's needed, to hide access latency.",
+    "read-ahead": "Filling a buffer ahead of the playhead so playback never waits on the flash.",
+    "limiter": "A DSP stage that caps peak level so a stacked mix doesn't clip.",
+    "clipping": "Distortion that happens when a signal exceeds the maximum level.",
+    "quantization": "Rounding a continuous signal to discrete digital steps.",
+    "dynamic range": "The span between the quietest and loudest a system can represent.",
+    "headroom": "Spare level above the normal signal before it clips.",
+    "transport": "The play / stop / fast-forward / rewind controls that move through the audio.",
+    "overdub": "Recording a new layer on top of existing loop material.",
+    "mixdown": "Combining multiple tracks into one — which the looper deliberately never stores.",
+    "dsp": "Digital Signal Processing — math on audio samples (filters, distortion, and so on).",
+
+    "rtos": "Real-Time Operating System — schedules tasks with timing guarantees (Zephyr here).",
+    "mpu": "Memory Protection Unit — hardware that traps bad memory access to catch bugs.",
+    "wdt": "Watchdog timer — resets the device if the firmware stops feeding it.",
+    "isr": "Interrupt Service Routine — code that runs when a hardware interrupt fires.",
+    "irq": "Interrupt request — a hardware signal that pre-empts the CPU to handle an event.",
+    "stack": "The region of RAM holding a thread's function calls and locals; overflowing it crashes the device.",
+    "linker": "The build step that places code and data at fixed addresses (e.g. the app at 0x20000).",
+    "elf": "The compiler's output format, converted to a raw .bin for the bootloader.",
+    "west": "Zephyr's command-line build and flash tool.",
+    "cmake": "The build-system generator that Zephyr projects use.",
+    "ninja": "The fast build tool Zephyr invokes under CMake.",
+    "overlay": "A devicetree fragment that tweaks the board definition (e.g. the USB descriptors).",
+    "pinctrl": "Zephyr's pin-configuration and multiplexing subsystem.",
+    "hsm": "Hierarchical State Machine — nested states that structure the app logic.",
+    "system_off": "The nRF's deepest sleep; on the SP-1 it hands control back to the bootloader.",
+    "resetreas": "An nRF register recording why the last reset happened; cleared before returning to the bootloader.",
+    "sys_poweroff": "The Zephyr call that puts the nRF into SYSTEM_OFF.",
+    "sof": "USB Start-Of-Frame — a 1 ms host tick the looper uses to regulate its audio feedback.",
+    "descriptor": "USB metadata telling the host what a device is (class, VID/PID, endpoints).",
+    "enumerate": "The USB handshake where the host detects and identifies a newly-plugged device.",
+    "composite device": "A single USB device that presents several interfaces at once (e.g. audio + serial).",
+    "vid": "USB Vendor ID — the number identifying the maker of a USB device.",
+    "pid": "USB Product ID — the number identifying a specific USB product.",
+    "endpoint": "A USB data channel within an interface.",
+    "baud": "The bits-per-second rate of a serial link (the album path runs at 115200).",
+    "opcode": "A single-byte command code in the bootloader / wire protocol.",
+    "payload": "The data carried inside a packet.",
+    "packet": "A framed unit of data sent over the wire.",
+    "ack": "Acknowledgement — a reply confirming a packet arrived (the album path sends none: fire-and-forget).",
+    "crc7": "A 7-bit checksum protecting each eMMC command.",
+
+    "resistor ladder": "A resistor chain that turns several buttons into distinct voltages one ADC pin can read.",
+    "fader": "A sliding potentiometer; the SP-1's four faders are read by the ADC.",
+    "open-drain": "An output that can only pull low (needs a pull-up); it reads high when idle.",
+    "active-low": "A signal that means 'on' when driven low rather than high.",
+    "pull-up": "A resistor that holds a line high until something pulls it low.",
+    "voltage divider": "Two resistors that scale a voltage down so the ADC can read it (e.g. battery level).",
+    "power-path": "Charger circuitry that runs the system from USB or battery and switches between them seamlessly.",
+    "pnp": "A transistor type; a BC807 PNP inverts the MIDI line on the sync jack.",
+    "bc807": "The PNP transistor driving the SP-1's sync-jack MIDI output — it inverts the signal.",
+    "trs": "Tip-Ring-Sleeve — the 3-conductor 3.5 mm jack used for the sync/MIDI output.",
+    "test point": "An exposed pad on the PCB you can probe or solder to (e.g. for SWD or the eMMC).",
+    "pcb": "Printed Circuit Board — the board all the SP-1's chips are mounted on.",
+
+    "ble": "Bluetooth Low Energy — a low-power Bluetooth mode; on the SP-1 handled by the CYBT module, not the nRF radio.",
+    "bluetooth": "The wireless audio/data standard; provided on the SP-1 by the CYBT-353027-02 module.",
+    "mmc": "MIDI Machine Control — transport commands (play / stop / record) sent over MIDI.",
+    "cc": "MIDI Continuous Controller — a knob/fader message (the sp1-midi BSP emits CCs).",
+    "pocket operator": "Teenage Engineering's pocket synths; their sync pulse can drive or follow the SP-1's second jack.",
+    "po sync": "The 2-pulse-per-step clock format used to sync Pocket Operators over the jack.",
+
+    "glitch": "A deliberate power or clock disturbance used to skip a security check (here, APPROTECT).",
+    "voltage glitch": "Briefly dropping the supply at the right instant to fault a chip past its protection.",
+    "fault injection": "Provoking hardware errors on purpose to bypass security.",
+    "pru": "The BeagleBone's real-time co-processor, used to time the SP-1 glitch attack.",
+    "beaglebone": "A single-board Linux computer used to run the APPROTECT glitch rig.",
+    "disassembly": "Turning compiled machine code back into readable assembly to study it.",
+    "reverse engineering": "Working out how a closed system behaves without its source or documentation.",
   };
 
   const root = document.querySelector("main .content");
   if (root && window.NodeFilter) {
-    const used = new Set();
     const keys = Object.keys(GLOSSARY).sort((a, b) => b.length - a.length);
     const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     let RE;
@@ -200,13 +327,10 @@
       return true;
     };
 
-    const firstUnused = (text) => {
-      RE.lastIndex = 0; let m;
-      while ((m = RE.exec(text))) {
-        const key = m[0].toLowerCase();
-        if (GLOSSARY[key] !== undefined && !used.has(key)) return { index: m.index, term: m[0], key };
-      }
-      return null;
+    // Wrap EVERY occurrence (not just the first) so repeat mentions are annotated too.
+    const firstMatch = (text) => {
+      RE.lastIndex = 0; const m = RE.exec(text);
+      return m ? { index: m.index, term: m[0], key: m[0].toLowerCase() } : null;
     };
 
     if (RE) {
@@ -218,10 +342,9 @@
 
       nodes.forEach((node) => {
         let guard = 0;
-        while (node && node.nodeValue && guard++ < 40) {
-          const hit = firstUnused(node.nodeValue);
+        while (node && node.nodeValue && guard++ < 500) {
+          const hit = firstMatch(node.nodeValue);
           if (!hit) break;
-          used.add(hit.key);
           const mid = node.splitText(hit.index);
           const rest = mid.splitText(hit.term.length);
           const ab = document.createElement("abbr");
